@@ -123,15 +123,16 @@ USE go_im;
 ```sql
 CREATE TABLE users (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id BIGINT NOT NULL UNIQUE,
-  username VARCHAR(64) NOT NULL UNIQUE,
+  user_id BIGINT NOT NULL,
+  username VARCHAR(64) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   user_type VARCHAR(20) NOT NULL DEFAULT 'normal',
   status VARCHAR(20) NOT NULL DEFAULT 'normal',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
-  INDEX idx_users_username (username),
+  UNIQUE KEY uk_users_user_id (user_id),
+  UNIQUE KEY uk_users_username (username),
   INDEX idx_users_status (status),
   INDEX idx_users_type (user_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -142,7 +143,7 @@ CREATE TABLE users (
 ```sql
 CREATE TABLE user_profiles (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id BIGINT NOT NULL UNIQUE,
+  user_id BIGINT NOT NULL,
   nickname VARCHAR(64) NOT NULL,
   avatar_url VARCHAR(512) NULL,
   gender VARCHAR(20) NULL,
@@ -151,6 +152,7 @@ CREATE TABLE user_profiles (
   profile_review_reason VARCHAR(255) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_profiles_user_id (user_id),
   INDEX idx_profiles_nickname (nickname),
   CONSTRAINT fk_profiles_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

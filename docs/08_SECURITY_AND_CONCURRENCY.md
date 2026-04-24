@@ -20,6 +20,16 @@ JWT Secret 必须来自环境变量
 不能在日志中打印完整 Token
 ```
 
+当前 Step 2 实现规则：
+
+```txt
+Access Token 使用 JWT，默认 15 分钟有效
+Refresh Token 使用 JWT 承载 user_id、device_id、jti
+Redis 只保存 Refresh Token 的 jti，Key 为 im:auth:refresh:{user_id}:{device_id}
+刷新 Token 时轮换 Access Token 和 Refresh Token
+退出登录删除 Refresh Token，并将当前 Access Token 的 jti 加入短期黑名单
+```
+
 ### 1.3 接口鉴权
 
 以下接口必须登录：

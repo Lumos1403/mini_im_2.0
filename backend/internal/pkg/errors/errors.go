@@ -1,5 +1,7 @@
 package errors
 
+import "net/http"
+
 const (
 	CodeSuccess = 0
 
@@ -30,3 +32,36 @@ func (e *AppError) Error() string {
 }
 
 var ErrInternal = New(CodeCommon, "internal error")
+
+var (
+	ErrInvalidParam        = New(CodeCommon, "invalid request")
+	ErrTokenInvalid        = New(20001, "token invalid")
+	ErrTokenExpired        = New(20002, "token expired")
+	ErrRefreshTokenInvalid = New(20003, "refresh token invalid")
+	ErrUserNotFound        = New(30001, "user not found")
+	ErrUsernameExists      = New(30002, "username already exists")
+	ErrInvalidCredentials  = New(30003, "username or password invalid")
+	ErrUserDisabled        = New(CodeUser, "user disabled")
+)
+
+func HTTPStatus(err *AppError) int {
+	if err == nil {
+		return http.StatusInternalServerError
+	}
+	if err == ErrInternal {
+		return http.StatusInternalServerError
+	}
+
+	switch err.Code {
+	case CodeCommon:
+		return http.StatusBadRequest
+	case 20001, 20002, 20003, CodeAuth:
+		return http.StatusUnauthorized
+	case 30001:
+		return http.StatusNotFound
+	case 30002, 30003, CodeUser:
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
+}

@@ -6,12 +6,13 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig
-	MySQL  MySQLConfig
-	Redis  RedisConfig
-	JWT    JWTConfig
-	File   FileConfig
-	IM     IMConfig
+	Server    ServerConfig
+	MySQL     MySQLConfig
+	Redis     RedisConfig
+	JWT       JWTConfig
+	File      FileConfig
+	IM        IMConfig
+	Snowflake SnowflakeConfig
 }
 
 type ServerConfig struct {
@@ -51,6 +52,10 @@ type IMConfig struct {
 	RecallMinutes   int
 }
 
+type SnowflakeConfig struct {
+	NodeID int64
+}
+
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -79,6 +84,9 @@ func Load() *Config {
 		IM: IMConfig{
 			GroupMaxMembers: getEnvInt("IM_GROUP_MAX_MEMBERS", 50),
 			RecallMinutes:   getEnvInt("IM_RECALL_MINUTES", 5),
+		},
+		Snowflake: SnowflakeConfig{
+			NodeID: int64(getEnvInt("SNOWFLAKE_NODE_ID", 1)),
 		},
 	}
 }

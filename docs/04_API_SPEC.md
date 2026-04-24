@@ -151,6 +151,8 @@ POST /api/auth/register
 
 注册成功后必须自动创建默认 Agent 好友和 Agent 单聊会话。
 
+当前 Step 2 只预留 Agent 好友创建的 service 方法，不创建好友关系和会话；好友系统与 Agent 聊天在后续阶段实现。
+
 ### 3.2 登录
 
 ```txt
@@ -222,12 +224,45 @@ POST /api/auth/logout
 
 需要登录。
 
+请求头：
+
+```txt
+Authorization: Bearer <access_token>
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```
+
 ## 4. 用户接口
 
 ### 4.1 获取当前用户信息
 
 ```txt
 GET /api/users/me
+```
+
+需要登录。
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "user_id": "123456789",
+    "username": "test001",
+    "nickname": "小明",
+    "avatar_url": ""
+  }
+}
 ```
 
 ### 4.2 修改当前用户资料
