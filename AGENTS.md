@@ -70,6 +70,7 @@
 
 ```txt
 handler -> service -> repository -> database/cache
+```
 
 目录职责：
 
@@ -111,8 +112,9 @@ JWT Secret、MySQL 密码、Redis 密码禁止硬编码。
 涉及 WebSocket 事件变更时，必须同步更新 WebSocket 协议文档。
 涉及权限、Token、消息删除、撤回、拉黑、群权限时，必须先说明实现方案，再写代码。
 当前阶段不要引入 Kafka、Elasticsearch、微服务、Kubernetes 等复杂组件，除非用户明确要求。
- 
+
 ---
+
 ## 5. 每次任务完成后必须输出
 
 每次完成开发后，必须说明：
@@ -125,6 +127,8 @@ JWT Secret、MySQL 密码、Redis 密码禁止硬编码。
 是否更新了相关文档。
 是否存在未完成事项。
 是否发现潜在风险。
+
+---
 
 ## 6. 当前开发优先级
 
