@@ -50,8 +50,9 @@ type FileConfig struct {
 }
 
 type IMConfig struct {
-	GroupMaxMembers int
-	RecallMinutes   int
+	GroupMaxMembers      int
+	RecallMinutes        int
+	TextMessageMaxLength int
 }
 
 type SnowflakeConfig struct {
@@ -97,8 +98,9 @@ func Load() *Config {
 			MaxSizeMB:   getEnvInt("FILE_MAX_SIZE_MB", 50),
 		},
 		IM: IMConfig{
-			GroupMaxMembers: getEnvInt("IM_GROUP_MAX_MEMBERS", 50),
-			RecallMinutes:   getEnvInt("IM_RECALL_MINUTES", 5),
+			GroupMaxMembers:      getEnvInt("IM_GROUP_MAX_MEMBERS", 50),
+			RecallMinutes:        getEnvInt("IM_RECALL_MINUTES", 5),
+			TextMessageMaxLength: getEnvInt("IM_TEXT_MESSAGE_MAX_LENGTH", 2000),
 		},
 		Snowflake: SnowflakeConfig{
 			NodeID: int64(getEnvInt("SNOWFLAKE_NODE_ID", 1)),

@@ -311,7 +311,7 @@ Docker 要求：
 
 请先输出实现计划和预计修改文件，等我确认后再写代码。
 
-## 第六轮提示词：WebSocket 基础ing
+## 第六轮提示词：WebSocket 基础done
 
 你现在只完成 Step 6：WebSocket 基础设施。
 
@@ -355,17 +355,18 @@ Docker 要求：
 
 请先输出实现计划和预计修改文件，等我确认后再写代码。
 
-## 第七轮提示词：单聊文本消息
+## 第七轮提示词：单聊文本消息ing
 
 你现在只完成 Step 7：单聊文本消息。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“消息系统”部分
-3. docs/03_DATABASE_DESIGN.md 中 messages、message_user_states 表
-4. docs/05_WEBSOCKET_PROTOCOL.md 中 chat.message.send / ack / receive
-5. docs/08_SECURITY_AND_CONCURRENCY.md 中消息并发设计部分
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“消息系统”部分
+4. docs/03_DATABASE_DESIGN.md 中 messages、message_user_states 表
+5. docs/05_WEBSOCKET_PROTOCOL.md 中 chat.message.send / ack / receive
+6. docs/08_SECURITY_AND_CONCURRENCY.md 中消息并发设计部分
 
 当前任务目标：
 实现好友之间的单聊文本消息发送、入库、实时推送、历史消息分页加载。

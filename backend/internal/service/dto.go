@@ -1,6 +1,9 @@
 package service
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type RegisterInput struct {
 	Username string
@@ -112,4 +115,52 @@ type ConversationLastMessageOutput struct {
 	Content     string    `json:"content"`
 	MessageType string    `json:"message_type"`
 	CreatedAt   time.Time `json:"created_at"`
+}
+
+type SendMessageAckOutput struct {
+	ClientMsgID    string `json:"client_msg_id"`
+	MessageID      string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+	SendStatus     string `json:"send_status"`
+	ServerTime     string `json:"server_time"`
+}
+
+type SendMessageFailedOutput struct {
+	ClientMsgID    string `json:"client_msg_id"`
+	MessageID      string `json:"message_id,omitempty"`
+	ConversationID string `json:"conversation_id"`
+	SendStatus     string `json:"send_status"`
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+	ServerTime     string `json:"server_time,omitempty"`
+}
+
+type MessageReceiveOutput struct {
+	ClientMsgID    string          `json:"client_msg_id"`
+	MessageID      string          `json:"message_id"`
+	ConversationID string          `json:"conversation_id"`
+	SenderID       string          `json:"sender_id"`
+	MessageType    string          `json:"message_type"`
+	Content        string          `json:"content"`
+	ExtraJSON      json.RawMessage `json:"extra_json"`
+	CreatedAt      string          `json:"created_at"`
+}
+
+type MessageOutput struct {
+	ClientMsgID    string          `json:"client_msg_id"`
+	MessageID      string          `json:"message_id"`
+	ConversationID string          `json:"conversation_id"`
+	SenderID       string          `json:"sender_id"`
+	MessageType    string          `json:"message_type"`
+	Content        string          `json:"content"`
+	ExtraJSON      json.RawMessage `json:"extra_json"`
+	SendStatus     string          `json:"send_status"`
+	CreatedAt      string          `json:"created_at"`
+}
+
+type MessagePageOutput struct {
+	List       []MessageOutput `json:"list"`
+	NextCursor string          `json:"next_cursor"`
+	HasMore    bool            `json:"has_more"`
+	Limit      int             `json:"limit"`
 }

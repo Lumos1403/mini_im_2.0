@@ -57,6 +57,7 @@ func main() {
 	userRepo := mysqlrepo.NewUserRepository(db)
 	friendRepo := mysqlrepo.NewFriendRepository(db)
 	conversationRepo := mysqlrepo.NewConversationRepository(db)
+	messageRepo := mysqlrepo.NewMessageRepository(db)
 	tokenRepo := redisrepo.NewTokenRepository(redisClient)
 	onlineRepo := redisrepo.NewOnlineRepository(redisClient)
 	agentService := service.NewAgentService()
@@ -64,17 +65,20 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	conversationService := service.NewConversationService(conversationRepo)
 	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator, nil)
+	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, idGenerator, cfg.IM.TextMessageMaxLength)
 	onlineService := service.NewOnlineService(onlineRepo, cfg.WebSocket.ServerID, time.Duration(cfg.WebSocket.OnlineTTLSeconds)*time.Second)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
 	wsHub := ws.NewHub(onlineService)
 	go wsHub.Run(context.Background())
-	wsServer := ws.NewServer(wsHub, tokenManager, tokenRepo, ws.OptionsFromConfig(cfg.WebSocket))
+	messageDispatcher := ws.NewSyncMessageDispatcher(messageService, wsHub, time.Duration(cfg.WebSocket.WriteWaitSeconds)*time.Second)
+	wsServer := ws.NewServer(wsHub, tokenManager, tokenRepo, messageDispatcher, ws.OptionsFromConfig(cfg.WebSocket))
 
 	engine := router.New(router.Dependencies{
 		AuthHandler:         handler.NewAuthHandler(authService),
 		UserHandler:         handler.NewUserHandler(userService),
 		FriendHandler:       handler.NewFriendHandler(friendService),
 		ConversationHandler: handler.NewConversationHandler(conversationService),
+		MessageHandler:      handler.NewMessageHandler(messageService),
 		AuthMiddleware:      authMiddleware,
 		WSServer:            wsServer,
 	})

@@ -307,6 +307,7 @@ CREATE TABLE messages (
   message_id BIGINT NOT NULL UNIQUE,
   conversation_id BIGINT NOT NULL,
   sender_id BIGINT NOT NULL,
+  client_msg_id VARCHAR(64) NOT NULL,
   message_type VARCHAR(30) NOT NULL,
   content TEXT NULL,
   extra_json JSON NULL,
@@ -316,7 +317,9 @@ CREATE TABLE messages (
   recalled_at DATETIME NULL,
   recalled_by BIGINT NULL,
   is_deleted_all TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_sender_conversation_client_msg (sender_id, conversation_id, client_msg_id),
   INDEX idx_messages_conv_time (conversation_id, created_at, message_id),
+  INDEX idx_messages_conv_msg (conversation_id, message_id),
   INDEX idx_messages_sender_time (sender_id, created_at),
   INDEX idx_messages_type (message_type),
   INDEX idx_messages_recalled (recalled_at),
@@ -328,6 +331,7 @@ CREATE TABLE messages (
 说明：
 
 ```txt
+client_msg_id 由客户端生成，用于同一 sender_id + conversation_id 下的发送幂等，最大长度 64
 content 保存文本内容或 file_id 字符串
 extra_json 保存扩展信息
 撤回后 content 可置空，recalled_at 不为空
@@ -443,10 +447,18 @@ CREATE TABLE files (
 
 ```txt
 用户不是该会话成员的消息
+当前用户没有 message_user_states 的消息
 messages.recalled_at IS NOT NULL 的消息
 messages.is_deleted_all = 1 的消息
 message_user_states.is_deleted = 1 的消息
 messages.created_at <= conversation_user_states.cleared_at 的消息
+```
+
+允许返回：
+
+```txt
+send_status = sent
+send_status = failed_blocked，仅发送方可见
 ```
 
 ### 5.2 搜索消息
@@ -474,6 +486,31 @@ SELECT 1 FROM block_relations WHERE blocker_id = 接收方 AND blocked_id = 发�
 ```
 
 存在则返回 failed_blocked。
+
+`failed_blocked` 持久化规则：
+
+```txt
+生成 message_id
+插入 messages，send_status = failed_blocked
+只为发送方插入 message_user_states
+不为接收方插入 message_user_states
+不推送给接收方
+不更新 conversations.last_message_id
+解除拉黑后不补发、不转正
+```
+
+### 5.5 消息幂等
+
+发送消息时必须携带 `client_msg_id`。
+
+```txt
+seq 只用于 WebSocket 请求响应匹配，不入库
+client_msg_id 只在 sender_id + conversation_id 范围内唯一
+重复提交相同 client_msg_id 且内容一致、已有消息是 sent 时，返回已有消息 ack
+重复提交相同 client_msg_id 且内容一致、已有消息是 failed_blocked 时，返回已有消息 failed
+重复提交相同 client_msg_id 但内容不一致时，返回 duplicate_client_msg_id_conflict
+不重复插入 messages，不重复插入 message_user_states，不重复更新 conversations.last_message_id
+```
 
 ## 6. 后续扩展建议
 

@@ -18,17 +18,19 @@ type Client struct {
 	Send   chan []byte
 	Hub    *Hub
 
-	options Options
-	once    sync.Once
+	options    Options
+	dispatcher MessageDispatcher
+	once       sync.Once
 }
 
-func NewClient(userID int64, conn *websocket.Conn, hub *Hub, options Options) *Client {
+func NewClient(userID int64, conn *websocket.Conn, hub *Hub, dispatcher MessageDispatcher, options Options) *Client {
 	return &Client{
-		UserID:  userID,
-		Conn:    conn,
-		Send:    make(chan []byte, options.SendBufferSize),
-		Hub:     hub,
-		options: options,
+		UserID:     userID,
+		Conn:       conn,
+		Send:       make(chan []byte, options.SendBufferSize),
+		Hub:        hub,
+		options:    options,
+		dispatcher: dispatcher,
 	}
 }
 
@@ -116,6 +118,20 @@ func (c *Client) handleEnvelope(envelope *Envelope) bool {
 		}
 	case EventPong:
 		return true
+	case EventChatMessageSend:
+		if c.dispatcher == nil {
+			if err := c.sendErrorEnvelope(envelope.Seq, "dispatcher_unavailable", "message dispatcher unavailable", envelope.Type); err != nil {
+				logger.L().Warn("websocket dispatcher error enqueue failed", zap.Int64("user_id", c.UserID), zap.Error(err))
+				return false
+			}
+			return true
+		}
+		dispatchCtx, cancel := context.WithTimeout(context.Background(), c.options.WriteWait)
+		defer cancel()
+		if err := c.dispatcher.Dispatch(dispatchCtx, c, envelope); err != nil {
+			logger.L().Warn("websocket dispatch failed", zap.Int64("user_id", c.UserID), zap.String("event_type", envelope.Type), zap.Error(err))
+			return false
+		}
 	default:
 		if err := c.sendErrorEnvelope(envelope.Seq, "unsupported_event", "unsupported websocket event", envelope.Type); err != nil {
 			logger.L().Warn("websocket error enqueue failed", zap.Int64("user_id", c.UserID), zap.Error(err))

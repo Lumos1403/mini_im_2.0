@@ -35,16 +35,18 @@ type Server struct {
 	hub          *Hub
 	tokenManager *jwtpkg.Manager
 	tokenRepo    *redisrepo.TokenRepository
+	dispatcher   MessageDispatcher
 	upgrader     websocket.Upgrader
 	options      Options
 }
 
-func NewServer(hub *Hub, tokenManager *jwtpkg.Manager, tokenRepo *redisrepo.TokenRepository, options Options) *Server {
+func NewServer(hub *Hub, tokenManager *jwtpkg.Manager, tokenRepo *redisrepo.TokenRepository, dispatcher MessageDispatcher, options Options) *Server {
 	options = normalizeOptions(options)
 	return &Server{
 		hub:          hub,
 		tokenManager: tokenManager,
 		tokenRepo:    tokenRepo,
+		dispatcher:   dispatcher,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -99,7 +101,7 @@ func (s *Server) Handle(ctx *gin.Context) {
 		return
 	}
 
-	client := NewClient(claims.UserID, conn, s.hub, s.options)
+	client := NewClient(claims.UserID, conn, s.hub, s.dispatcher, s.options)
 	registerCtx, cancel := context.WithTimeout(ctx.Request.Context(), s.options.WriteWait)
 	defer cancel()
 	if err := s.hub.Register(registerCtx, client); err != nil {

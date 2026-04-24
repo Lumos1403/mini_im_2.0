@@ -157,12 +157,23 @@ chat.message.send
   "type": "chat.message.send",
   "data": {
     "conversation_id": "111111",
+    "client_msg_id": "550e8400-e29b-41d4-a716-446655440000",
     "message_type": "text",
     "content": "你好",
     "extra_json": {}
   },
   "timestamp": 1710000000000
 }
+```
+
+说明：
+
+```txt
+seq 只用于 WebSocket 请求响应匹配
+client_msg_id 必填，由客户端生成，建议 UUID，最大长度 64
+client_msg_id 在同一 sender_id + conversation_id 范围内唯一，用于消息发送幂等
+sender_id 必须来自 WebSocket 鉴权结果，禁止信任客户端传入
+text 消息 content trim 后不能为空，默认最大 2000，可通过配置调整
 ```
 
 文件消息：
@@ -201,10 +212,11 @@ chat.message.ack
   "seq": "tmp-001",
   "type": "chat.message.ack",
   "data": {
+    "client_msg_id": "550e8400-e29b-41d4-a716-446655440000",
     "message_id": "999999",
     "conversation_id": "111111",
     "send_status": "sent",
-    "created_at": "2026-04-24 12:00:00"
+    "server_time": "2026-04-24 12:00:00"
   },
   "timestamp": 1710000001000
 }
@@ -217,9 +229,13 @@ chat.message.ack
   "seq": "tmp-001",
   "type": "chat.message.failed",
   "data": {
+    "client_msg_id": "550e8400-e29b-41d4-a716-446655440000",
+    "message_id": "999999",
     "conversation_id": "111111",
     "send_status": "failed_blocked",
-    "reason": "对方已拒收你的消息"
+    "code": "failed_blocked",
+    "message": "对方已拒收你的消息",
+    "server_time": "2026-04-24 12:00:00"
   },
   "timestamp": 1710000001000
 }
@@ -240,6 +256,7 @@ chat.message.receive
   "seq": "server-999999",
   "type": "chat.message.receive",
   "data": {
+    "client_msg_id": "550e8400-e29b-41d4-a716-446655440000",
     "message_id": "999999",
     "conversation_id": "111111",
     "sender_id": "123456",
@@ -401,10 +418,11 @@ system.notice
 
 ```txt
 1. 生成本地 seq
-2. 消息先显示为 sending
-3. 收到 chat.message.ack 后替换为 sent，并使用服务端 message_id
-4. 收到 chat.message.failed 后显示红色感叹号
-5. failed_blocked 显示“对方已拒收你的消息”
+2. 生成 client_msg_id
+3. 消息先显示为 sending
+4. 收到 chat.message.ack 后替换为 sent，并使用服务端 message_id
+5. 收到 chat.message.failed 后显示红色感叹号
+6. failed_blocked 显示“对方已拒收你的消息”
 ```
 
 ## 14. 服务端处理规则
@@ -415,14 +433,20 @@ system.notice
 校验用户登录
 校验 conversation 是否存在
 校验用户是否在 conversation 内
+校验 client_msg_id 必填且长度不超过 64
+同一 sender_id + conversation_id + client_msg_id 重复且内容一致时返回已有 ack
+同一 sender_id + conversation_id + client_msg_id 重复且已有消息是 failed_blocked 时返回已有 failed
+同一 sender_id + conversation_id + client_msg_id 重复但内容不一致时返回 duplicate_client_msg_id_conflict
 如果是群聊，校验是否禁言
 如果是单聊，校验是否被接收方拉黑
 生成 message_id
 写入 MySQL
-更新会话 last_message
-推送给在线接收方
-给发送方返回 ack
+正常消息更新会话 last_message 并推送给在线接收方
+failed_blocked 只为发送方持久化，不更新 last_message，不推送给接收方
+给发送方返回 ack 或 failed
 ```
+
+被拉黑导致的 `failed_blocked` 写入 messages，只创建发送方 message_user_states，不创建接收方 message_user_states。发送方刷新后可通过历史消息接口看到，接收方永远不可见；解除拉黑后不补发、不转正。
 
 ## 15. 多节点预留
 

@@ -9,6 +9,11 @@ const (
 	EventPing  = "ping"
 	EventPong  = "pong"
 	EventError = "error"
+
+	EventChatMessageSend    = "chat.message.send"
+	EventChatMessageAck     = "chat.message.ack"
+	EventChatMessageReceive = "chat.message.receive"
+	EventChatMessageFailed  = "chat.message.failed"
 )
 
 type Envelope struct {

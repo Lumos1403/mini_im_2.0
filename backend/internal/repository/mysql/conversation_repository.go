@@ -135,6 +135,33 @@ LIMIT ? OFFSET ?
 	return items, total, nil
 }
 
+func (r *ConversationRepository) FindPrivatePeerID(ctx context.Context, conversationID int64, userID int64) (int64, error) {
+	var peerID int64
+	err := r.db.QueryRowContext(ctx, `
+SELECT peer_cm.user_id
+FROM conversations c
+INNER JOIN conversation_members self_cm
+  ON self_cm.conversation_id = c.conversation_id
+  AND self_cm.user_id = ?
+  AND self_cm.status = ?
+INNER JOIN conversation_members peer_cm
+  ON peer_cm.conversation_id = c.conversation_id
+  AND peer_cm.user_id <> ?
+  AND peer_cm.status = ?
+WHERE c.conversation_id = ?
+  AND c.conversation_type = ?
+  AND c.status = ?
+LIMIT 1
+`, userID, model.ConversationMemberStatusActive, userID, model.ConversationMemberStatusActive, conversationID, model.ConversationTypePrivate, model.ConversationStatusNormal).Scan(&peerID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrConversationNotFound
+		}
+		return 0, err
+	}
+	return peerID, nil
+}
+
 func findPrivateConversationID(ctx context.Context, exec Executor, userID1 int64, userID2 int64) (int64, error) {
 	var conversationID int64
 	err := exec.QueryRowContext(ctx, `

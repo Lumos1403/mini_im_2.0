@@ -462,8 +462,43 @@ GET /api/conversations/{conversation_id}/messages?cursor=&limit=30
 说明：
 
 ```txt
-按时间倒序或正序由前端需求确定，但必须支持分页
+cursor 基于雪花 message_id
+首次不传 cursor，返回最新 limit 条消息
+加载更早消息时传当前页最旧的 message_id，服务端查询 message_id < cursor
+服务端倒序查询，返回前按时间正序排列
+历史消息以当前用户的 message_user_states 作为可见性依据
+允许返回 sent 和发送方可见的 failed_blocked
 必须过滤当前用户已删除、已清空、已撤回消息
+必须过滤全局删除消息
+必须过滤当前用户没有 message_user_states 的消息
+limit 默认 30，最大 100
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "client_msg_id": "client-uuid",
+        "message_id": "999999",
+        "conversation_id": "111111",
+        "sender_id": "123456",
+        "message_type": "text",
+        "content": "你好",
+        "extra_json": {},
+        "send_status": "sent",
+        "created_at": "2026-04-24 12:00:00"
+      }
+    ],
+    "next_cursor": "999999",
+    "has_more": true,
+    "limit": 30
+  }
+}
 ```
 
 ### 6.3 清空聊天记录
@@ -509,6 +544,12 @@ DELETE /api/messages/{message_id}
 ```
 
 只删除当前用户视角。
+
+```txt
+删除必须只更新当前用户自己的 message_user_states.is_deleted
+当前用户没有 message_user_states 时不能删除该消息
+failed_blocked 只有发送方拥有 message_user_states，因此只允许发送方在自己视角删除
+```
 
 ### 7.2 撤回消息
 

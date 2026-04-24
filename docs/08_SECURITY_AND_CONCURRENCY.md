@@ -164,6 +164,19 @@ block_relations(blocker_id, blocked_id)
 
 优点：简单、容易调试。
 
+当前单聊文本消息阶段必须保证：
+
+```txt
+client_msg_id 由客户端生成，用于同一 sender_id + conversation_id 下的幂等
+重复 client_msg_id 且内容一致、已有消息是 sent 时返回已有 ack，不重复入库和推送
+重复 client_msg_id 且内容一致、已有消息是 failed_blocked 时返回已有 failed，不重复入库和推送
+重复 client_msg_id 但内容不一致时返回 duplicate_client_msg_id_conflict
+正常消息插入 messages、插入双方 message_user_states、更新 conversations.last_message 必须在同一个 MySQL 事务中完成
+failed_blocked 插入 messages、只插入发送方 message_user_states 必须在同一个 MySQL 事务中完成
+更新 last_message_id 时只能用更大的 message_id 覆盖，防止旧消息覆盖新消息
+failed_blocked 不推送、不补发、不转正、不更新 conversations.last_message_id
+```
+
 ### 3.2 后续异步链路
 
 ```txt

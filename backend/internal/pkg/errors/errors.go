@@ -49,6 +49,10 @@ var (
 	ErrCannotAddSelf         = New(40005, "cannot add yourself")
 	ErrFriendshipNotFound    = New(40006, "friendship not found")
 	ErrCannotBlockSelf       = New(40007, "cannot block yourself")
+	ErrMessageNotFound       = New(50001, "message not found")
+	ErrMessageAccessDenied   = New(50004, "message access denied")
+	ErrMessageInvalidContent = New(50005, "message content invalid")
+	ErrMessageConflict       = New(50006, "client_msg_id already exists with different content")
 )
 
 func HTTPStatus(err *AppError) int {
@@ -76,6 +80,14 @@ func HTTPStatus(err *AppError) int {
 		return http.StatusForbidden
 	case 40005, 40007, CodeFriend:
 		return http.StatusBadRequest
+	case 50001:
+		return http.StatusNotFound
+	case 50004:
+		return http.StatusForbidden
+	case 50005:
+		return http.StatusBadRequest
+	case 50006:
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}
