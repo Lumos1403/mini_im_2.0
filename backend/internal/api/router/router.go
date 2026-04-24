@@ -7,10 +7,11 @@ import (
 )
 
 type Dependencies struct {
-	AuthHandler    *handler.AuthHandler
-	UserHandler    *handler.UserHandler
-	FriendHandler  *handler.FriendHandler
-	AuthMiddleware gin.HandlerFunc
+	AuthHandler         *handler.AuthHandler
+	UserHandler         *handler.UserHandler
+	FriendHandler       *handler.FriendHandler
+	ConversationHandler *handler.ConversationHandler
+	AuthMiddleware      gin.HandlerFunc
 }
 
 func New(deps Dependencies) *gin.Engine {
@@ -27,6 +28,9 @@ func New(deps Dependencies) *gin.Engine {
 	}
 	if deps.FriendHandler != nil && deps.AuthMiddleware != nil {
 		deps.FriendHandler.Register(api, deps.AuthMiddleware)
+	}
+	if deps.ConversationHandler != nil && deps.AuthMiddleware != nil {
+		deps.ConversationHandler.Register(api, deps.AuthMiddleware)
 	}
 
 	return engine

@@ -131,7 +131,7 @@ LIMIT ? OFFSET ?
 	return requests, total, nil
 }
 
-func (r *FriendRepository) AcceptFriendRequest(ctx context.Context, requestID int64, receiverID int64, userID1 int64, userID2 int64) error {
+func (r *FriendRepository) AcceptFriendRequest(ctx context.Context, requestID int64, receiverID int64, userID1 int64, userID2 int64, afterAccept func(context.Context, Executor) error) error {
 	left, right := orderedFriendPair(userID1, userID2)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -162,6 +162,12 @@ ON DUPLICATE KEY UPDATE status = VALUES(status), updated_at = CURRENT_TIMESTAMP
 `, left, right, model.FriendshipStatusNormal)
 	if err != nil {
 		return err
+	}
+
+	if afterAccept != nil {
+		if err := afterAccept(ctx, tx); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit()

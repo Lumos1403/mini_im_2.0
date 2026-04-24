@@ -207,7 +207,7 @@ Docker 要求：
 
 请先输出实现计划和预计修改文件，等我确认后再写代码。
 
-## 七、第四轮提示词：好友系统ing
+## 七、第四轮提示词：好友系统done
 
 你现在只完成 Step 4：好友系统。
 
@@ -265,16 +265,17 @@ Docker 要求：
 
 请先输出实现计划、数据库表设计确认、预计修改文件，等我确认后再写代码。
 
-## 第五轮提示词：会话系统
+## 第五轮提示词：会话系统ing
 
 你现在只完成 Step 5：会话系统。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“会话系统”部分
-3. docs/03_DATABASE_DESIGN.md 中 conversations、conversation_members、conversation_user_states 表
-4. docs/04_API_SPEC.md 中 conversations 相关接口
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“会话系统”部分
+4. docs/03_DATABASE_DESIGN.md 中 conversations、conversation_members、conversation_user_states 表
+5. docs/04_API_SPEC.md 中 conversations 相关接口
 
 当前任务目标：
 实现会话表、会话成员表、用户会话状态表，以及获取会话列表接口。

@@ -16,7 +16,7 @@
 
 ```env
 APP_ENV=dev
-SERVER_PORT=8080
+SERVER_PORT=8081
 
 MYSQL_ROOT_PASSWORD=rootpassword
 MYSQL_DATABASE=go_im
@@ -86,7 +86,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8080:8080"
+      - "8080:8081"
     volumes:
       - uploads_data:/app/uploads
 
@@ -123,7 +123,7 @@ WORKDIR /app
 COPY --from=builder /app/server /app/server
 COPY --from=builder /app/configs /app/configs
 RUN mkdir -p /app/uploads
-EXPOSE 8080
+EXPOSE 8081
 CMD ["/app/server"]
 ```
 
@@ -161,14 +161,14 @@ server {
   }
 
   location /api/ {
-    proxy_pass http://backend:8080/api/;
+    proxy_pass http://backend:8081/api/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   }
 
   location /ws {
-    proxy_pass http://backend:8080/ws;
+    proxy_pass http://backend:8081/ws;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
@@ -189,7 +189,7 @@ docker compose up -d --build
 
 ```txt
 前端：http://localhost:5173
-后端：http://localhost:8080
+后端：http://localhost:8081
 ```
 
 ## 8. 云服务器上线流程

@@ -451,6 +451,8 @@ GET /api/conversations?page=1&page_size=20
 }
 ```
 
+当前实现范围：返回当前登录用户可见的会话列表；private 会话标题和头像取对方用户资料。消息模块尚未实现时，`last_message` 返回 `null`。
+
 ### 6.2 获取会话消息
 
 ```txt

@@ -297,6 +297,8 @@ CREATE TABLE conversation_user_states (
 
 用途：记录某个用户在某个会话中的状态，例如清空时间、未读数、置顶、免打扰。
 
+当前实现：对应 `backend/migrations/003_create_conversation_system.sql`，本阶段先用于 private 会话创建、恢复和会话列表查询；group 会话仅保留表结构扩展能力。
+
 ### 4.9 messages 消息主表
 
 ```sql

@@ -225,7 +225,7 @@ bcrypt 密码校验
 
 ```yaml
 server:
-  port: 8080
+  port: 8081
   mode: debug
 
 mysql:

@@ -96,3 +96,20 @@ type FriendOutput struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 }
+
+type ConversationOutput struct {
+	ConversationID   string                         `json:"conversation_id"`
+	ConversationType string                         `json:"conversation_type"`
+	Title            string                         `json:"title"`
+	AvatarURL        string                         `json:"avatar_url"`
+	LastMessage      *ConversationLastMessageOutput `json:"last_message"`
+	UnreadCount      int                            `json:"unread_count"`
+	IsPinned         bool                           `json:"is_pinned"`
+	IsMuted          bool                           `json:"is_muted"`
+}
+
+type ConversationLastMessageOutput struct {
+	Content     string    `json:"content"`
+	MessageType string    `json:"message_type"`
+	CreatedAt   time.Time `json:"created_at"`
+}

@@ -54,18 +54,21 @@ func main() {
 
 	userRepo := mysqlrepo.NewUserRepository(db)
 	friendRepo := mysqlrepo.NewFriendRepository(db)
+	conversationRepo := mysqlrepo.NewConversationRepository(db)
 	tokenRepo := redisrepo.NewTokenRepository(redisClient)
 	agentService := service.NewAgentService()
 	authService := service.NewAuthService(userRepo, tokenRepo, tokenManager, idGenerator, agentService)
 	userService := service.NewUserService(userRepo)
-	friendService := service.NewFriendService(userRepo, friendRepo, idGenerator, nil)
+	conversationService := service.NewConversationService(conversationRepo)
+	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator, nil)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
 
 	engine := router.New(router.Dependencies{
-		AuthHandler:    handler.NewAuthHandler(authService),
-		UserHandler:    handler.NewUserHandler(userService),
-		FriendHandler:  handler.NewFriendHandler(friendService),
-		AuthMiddleware: authMiddleware,
+		AuthHandler:         handler.NewAuthHandler(authService),
+		UserHandler:         handler.NewUserHandler(userService),
+		FriendHandler:       handler.NewFriendHandler(friendService),
+		ConversationHandler: handler.NewConversationHandler(conversationService),
+		AuthMiddleware:      authMiddleware,
 	})
 	if err := engine.Run(cfg.Server.Address()); err != nil {
 		logger.L().Fatal("server stopped", zap.Error(err))

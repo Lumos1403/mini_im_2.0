@@ -25,21 +25,23 @@ func (noopFriendEventRecorder) RecordFriendDeleted(ctx context.Context, actorID 
 }
 
 type FriendService struct {
-	userRepo      *mysqlrepo.UserRepository
-	friendRepo    *mysqlrepo.FriendRepository
-	idGenerator   *snowflake.Node
-	eventRecorder FriendEventRecorder
+	userRepo         *mysqlrepo.UserRepository
+	friendRepo       *mysqlrepo.FriendRepository
+	conversationRepo *mysqlrepo.ConversationRepository
+	idGenerator      *snowflake.Node
+	eventRecorder    FriendEventRecorder
 }
 
-func NewFriendService(userRepo *mysqlrepo.UserRepository, friendRepo *mysqlrepo.FriendRepository, idGenerator *snowflake.Node, eventRecorder FriendEventRecorder) *FriendService {
+func NewFriendService(userRepo *mysqlrepo.UserRepository, friendRepo *mysqlrepo.FriendRepository, conversationRepo *mysqlrepo.ConversationRepository, idGenerator *snowflake.Node, eventRecorder FriendEventRecorder) *FriendService {
 	if eventRecorder == nil {
 		eventRecorder = noopFriendEventRecorder{}
 	}
 	return &FriendService{
-		userRepo:      userRepo,
-		friendRepo:    friendRepo,
-		idGenerator:   idGenerator,
-		eventRecorder: eventRecorder,
+		userRepo:         userRepo,
+		friendRepo:       friendRepo,
+		conversationRepo: conversationRepo,
+		idGenerator:      idGenerator,
+		eventRecorder:    eventRecorder,
 	}
 }
 
@@ -156,7 +158,16 @@ func (s *FriendService) AcceptFriendRequest(ctx context.Context, userID int64, r
 		return apperrors.ErrAlreadyFriends
 	}
 
-	if err := s.friendRepo.AcceptFriendRequest(ctx, requestID, userID, request.FromUserID, request.ToUserID); err != nil {
+	var afterAccept func(context.Context, mysqlrepo.Executor) error
+	if s.conversationRepo != nil {
+		conversationID := s.idGenerator.NextID()
+		afterAccept = func(ctx context.Context, exec mysqlrepo.Executor) error {
+			_, err := s.conversationRepo.EnsurePrivateConversationInTx(ctx, exec, conversationID, request.FromUserID, request.ToUserID)
+			return err
+		}
+	}
+
+	if err := s.friendRepo.AcceptFriendRequest(ctx, requestID, userID, request.FromUserID, request.ToUserID, afterAccept); err != nil {
 		if errors.Is(err, mysqlrepo.ErrFriendRequestNotFound) {
 			return apperrors.ErrFriendRequestNotFound
 		}
