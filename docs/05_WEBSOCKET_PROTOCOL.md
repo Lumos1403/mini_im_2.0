@@ -28,7 +28,7 @@ wss://your-domain.com/ws?token=<access_token>
 获取 user_id
 升级为 WebSocket
 注册连接到 Hub
-写入 Redis 在线状态
+写入 Redis 在线状态，默认 TTL 60 秒
 启动读协程
 启动写协程
 启动心跳
@@ -52,7 +52,19 @@ wss://your-domain.com/ws?token=<access_token>
 ```txt
 服务端每 30 秒 ping
 客户端收到后 pong
+服务端收到协议级 pong 后刷新 im:online:{user_id} TTL
 超过 60 秒无响应则断开
+```
+
+### 2.4 安全限制
+
+```txt
+WebSocket 读取消息大小默认限制为 64KB
+发送队列必须有容量上限，默认 256
+发送队列满时关闭该慢连接
+开发环境允许 localhost / 127.0.0.1 Origin
+生产环境必须通过 WS_ALLOWED_ORIGINS 配置允许域名
+Redis 黑名单检查失败时拒绝连接
 ```
 
 ## 3. 统一消息 Envelope
@@ -77,9 +89,59 @@ data：事件数据
 timestamp：客户端或服务端时间戳，毫秒
 ```
 
-## 4. 客户端发送消息
+未知事件类型统一返回 error envelope：
 
-### 4.1 发送单聊 / 群聊消息
+```json
+{
+  "seq": "tmp-unknown-001",
+  "type": "error",
+  "data": {
+    "code": "unsupported_event",
+    "message": "unsupported websocket event",
+    "event_type": "unknown.event"
+  },
+  "timestamp": 1710000001000
+}
+```
+
+## 4. 基础测试事件
+
+当前 WebSocket 基础阶段只实现连接、在线状态、心跳和测试事件，暂不实现真实聊天消息发送。
+
+客户端可发送：
+
+```json
+{
+  "seq": "tmp-ping-001",
+  "type": "ping",
+  "data": {},
+  "timestamp": 1710000000000
+}
+```
+
+服务端返回：
+
+```json
+{
+  "seq": "tmp-ping-001",
+  "type": "pong",
+  "data": {},
+  "timestamp": 1710000001000
+}
+```
+
+说明：
+
+```txt
+ping / pong 是业务层测试事件。
+服务端仍会使用 WebSocket 协议级 ping/pong 做心跳检测。
+```
+
+## 5. 客户端发送消息
+
+### 5.1 发送单聊 / 群聊消息
+
+以下聊天消息事件在后续单聊消息阶段实现，当前 WebSocket 基础阶段暂不处理。
 
 事件类型：
 
@@ -124,7 +186,7 @@ chat.message.send
 }
 ```
 
-## 5. 服务端确认 ACK
+## 6. 服务端确认 ACK
 
 事件类型：
 
@@ -163,7 +225,7 @@ chat.message.ack
 }
 ```
 
-## 6. 服务端推送新消息
+## 7. 服务端推送新消息
 
 事件类型：
 
@@ -190,7 +252,7 @@ chat.message.receive
 }
 ```
 
-## 7. 撤回消息事件
+## 8. 撤回消息事件
 
 撤回通过 HTTP API 发起，WebSocket 用于通知相关在线用户移除消息。
 
@@ -223,7 +285,7 @@ chat.message.recalled
 发送方：移除该消息，显示“你撤回了一条消息”和“重新编辑”按钮
 ```
 
-## 8. 删除消息事件
+## 9. 删除消息事件
 
 单条删除只影响当前用户，不需要推送给对方。
 
@@ -235,9 +297,9 @@ chat.message.deleted
 
 用于多端同步当前用户自己的其他设备。
 
-## 9. 好友相关事件
+## 10. 好友相关事件
 
-### 9.1 收到好友申请
+### 10.1 收到好友申请
 
 ```txt
 friend.request.receive
@@ -256,13 +318,13 @@ friend.request.receive
 }
 ```
 
-### 9.2 好友申请被接受
+### 10.2 好友申请被接受
 
 ```txt
 friend.request.accepted
 ```
 
-### 9.3 好友被删除
+### 10.3 好友被删除
 
 ```txt
 friend.deleted
@@ -279,9 +341,9 @@ friend.deleted
 }
 ```
 
-## 10. 群聊事件
+## 11. 群聊事件
 
-### 10.1 群消息
+### 11.1 群消息
 
 群消息也使用：
 
@@ -291,7 +353,7 @@ chat.message.receive
 
 通过 conversation_id 区分。
 
-### 10.2 群成员变更
+### 11.2 群成员变更
 
 ```txt
 group.member.changed
@@ -309,13 +371,13 @@ group.member.changed
 }
 ```
 
-### 10.3 群禁言变更
+### 11.3 群禁言变更
 
 ```txt
 group.member.muted
 ```
 
-## 11. 系统通知
+## 12. 系统通知
 
 事件类型：
 
@@ -333,7 +395,7 @@ system.notice
 }
 ```
 
-## 12. 前端发送状态规则
+## 13. 前端发送状态规则
 
 前端发送消息时：
 
@@ -345,7 +407,7 @@ system.notice
 5. failed_blocked 显示“对方已拒收你的消息”
 ```
 
-## 13. 服务端处理规则
+## 14. 服务端处理规则
 
 服务端收到 `chat.message.send` 后必须：
 
@@ -362,7 +424,7 @@ system.notice
 给发送方返回 ack
 ```
 
-## 14. 多节点预留
+## 15. 多节点预留
 
 MVP 单节点即可。后续多节点时：
 

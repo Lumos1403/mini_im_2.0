@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"time"
 
 	"mini_im/backend/internal/api/handler"
@@ -13,6 +14,7 @@ import (
 	mysqlrepo "mini_im/backend/internal/repository/mysql"
 	redisrepo "mini_im/backend/internal/repository/redis"
 	"mini_im/backend/internal/service"
+	"mini_im/backend/internal/ws"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -56,12 +58,17 @@ func main() {
 	friendRepo := mysqlrepo.NewFriendRepository(db)
 	conversationRepo := mysqlrepo.NewConversationRepository(db)
 	tokenRepo := redisrepo.NewTokenRepository(redisClient)
+	onlineRepo := redisrepo.NewOnlineRepository(redisClient)
 	agentService := service.NewAgentService()
 	authService := service.NewAuthService(userRepo, tokenRepo, tokenManager, idGenerator, agentService)
 	userService := service.NewUserService(userRepo)
 	conversationService := service.NewConversationService(conversationRepo)
 	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator, nil)
+	onlineService := service.NewOnlineService(onlineRepo, cfg.WebSocket.ServerID, time.Duration(cfg.WebSocket.OnlineTTLSeconds)*time.Second)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
+	wsHub := ws.NewHub(onlineService)
+	go wsHub.Run(context.Background())
+	wsServer := ws.NewServer(wsHub, tokenManager, tokenRepo, ws.OptionsFromConfig(cfg.WebSocket))
 
 	engine := router.New(router.Dependencies{
 		AuthHandler:         handler.NewAuthHandler(authService),
@@ -69,6 +76,7 @@ func main() {
 		FriendHandler:       handler.NewFriendHandler(friendService),
 		ConversationHandler: handler.NewConversationHandler(conversationService),
 		AuthMiddleware:      authMiddleware,
+		WSServer:            wsServer,
 	})
 	if err := engine.Run(cfg.Server.Address()); err != nil {
 		logger.L().Fatal("server stopped", zap.Error(err))

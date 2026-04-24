@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -13,6 +14,7 @@ type Config struct {
 	File      FileConfig
 	IM        IMConfig
 	Snowflake SnowflakeConfig
+	WebSocket WebSocketConfig
 }
 
 type ServerConfig struct {
@@ -56,11 +58,24 @@ type SnowflakeConfig struct {
 	NodeID int64
 }
 
+type WebSocketConfig struct {
+	ServerID              string
+	WriteWaitSeconds      int
+	PongWaitSeconds       int
+	PingPeriodSeconds     int
+	OnlineTTLSeconds      int
+	MaxMessageBytes       int64
+	SendBufferSize        int
+	AllowedOrigins        []string
+	AllowLocalhostOrigins bool
+}
+
 func Load() *Config {
+	serverMode := getEnv("SERVER_MODE", getEnv("GIN_MODE", ginDebugMode))
 	return &Config{
 		Server: ServerConfig{
 			Port: getEnv("SERVER_PORT", "8081"),
-			Mode: getEnv("SERVER_MODE", getEnv("GIN_MODE", ginDebugMode)),
+			Mode: serverMode,
 		},
 		MySQL: MySQLConfig{
 			DSN: os.Getenv("MYSQL_DSN"),
@@ -88,6 +103,17 @@ func Load() *Config {
 		Snowflake: SnowflakeConfig{
 			NodeID: int64(getEnvInt("SNOWFLAKE_NODE_ID", 1)),
 		},
+		WebSocket: WebSocketConfig{
+			ServerID:              getEnv("WS_SERVER_ID", "ws-1"),
+			WriteWaitSeconds:      getEnvInt("WS_WRITE_WAIT_SECONDS", 10),
+			PongWaitSeconds:       getEnvInt("WS_PONG_WAIT_SECONDS", 60),
+			PingPeriodSeconds:     getEnvInt("WS_PING_PERIOD_SECONDS", 30),
+			OnlineTTLSeconds:      getEnvInt("WS_ONLINE_TTL_SECONDS", 60),
+			MaxMessageBytes:       int64(getEnvInt("WS_MAX_MESSAGE_BYTES", 65536)),
+			SendBufferSize:        getEnvInt("WS_SEND_BUFFER_SIZE", 256),
+			AllowedOrigins:        getEnvList("WS_ALLOWED_ORIGINS"),
+			AllowLocalhostOrigins: getEnvBool("WS_ALLOW_LOCAL_ORIGINS", serverMode != "release"),
+		},
 	}
 }
 
@@ -112,4 +138,34 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvList(key string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }

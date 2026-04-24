@@ -2,6 +2,7 @@ package router
 
 import (
 	"mini_im/backend/internal/api/handler"
+	"mini_im/backend/internal/ws"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,11 +13,16 @@ type Dependencies struct {
 	FriendHandler       *handler.FriendHandler
 	ConversationHandler *handler.ConversationHandler
 	AuthMiddleware      gin.HandlerFunc
+	WSServer            *ws.Server
 }
 
 func New(deps Dependencies) *gin.Engine {
 	engine := gin.New()
 	engine.Use(gin.Logger(), gin.Recovery())
+
+	if deps.WSServer != nil {
+		engine.GET("/ws", deps.WSServer.Handle)
+	}
 
 	api := engine.Group("/api")
 	handler.NewHealthHandler().Register(api)
