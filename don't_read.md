@@ -265,7 +265,7 @@ Docker 要求：
 
 请先输出实现计划、数据库表设计确认、预计修改文件，等我确认后再写代码。
 
-## 第五轮提示词：会话系统ing
+## 第五轮提示词：会话系统done
 
 你现在只完成 Step 5：会话系统。
 
@@ -311,16 +311,17 @@ Docker 要求：
 
 请先输出实现计划和预计修改文件，等我确认后再写代码。
 
-## 第六轮提示词：WebSocket 基础
+## 第六轮提示词：WebSocket 基础ing
 
 你现在只完成 Step 6：WebSocket 基础设施。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/05_WEBSOCKET_PROTOCOL.md
-3. docs/06_BACKEND_ARCHITECTURE.md 中 ws 目录设计
-4. docs/08_SECURITY_AND_CONCURRENCY.md 中 WebSocket 在线状态部分
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/05_WEBSOCKET_PROTOCOL.md
+4. docs/06_BACKEND_ARCHITECTURE.md 中 ws 目录设计
+5. docs/08_SECURITY_AND_CONCURRENCY.md 中 WebSocket 在线状态部分
 
 当前任务目标：
 实现 WebSocket 鉴权、连接管理、在线状态、心跳机制和基础事件格式。
