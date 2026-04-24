@@ -193,6 +193,19 @@ func toUserOutput(user *model.UserWithProfile) UserOutput {
 	}
 }
 
+func toProfileOutput(user *model.UserWithProfile) ProfileOutput {
+	return ProfileOutput{
+		UserID:              formatID(user.User.UserID),
+		Username:            user.User.Username,
+		Nickname:            user.Profile.Nickname,
+		AvatarURL:           user.Profile.AvatarURL.String,
+		Gender:              user.Profile.Gender.String,
+		Bio:                 user.Profile.Bio.String,
+		ProfileStatus:       user.Profile.ProfileStatus,
+		ProfileReviewReason: user.Profile.ProfileReviewReason.String,
+	}
+}
+
 func formatID(id int64) string {
 	return strconv.FormatInt(id, 10)
 }

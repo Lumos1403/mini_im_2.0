@@ -36,3 +36,21 @@ type UserOutput struct {
 	Nickname  string `json:"nickname"`
 	AvatarURL string `json:"avatar_url"`
 }
+
+type ProfileOutput struct {
+	UserID              string `json:"user_id"`
+	Username            string `json:"username"`
+	Nickname            string `json:"nickname"`
+	AvatarURL           string `json:"avatar_url"`
+	Gender              string `json:"gender"`
+	Bio                 string `json:"bio"`
+	ProfileStatus       string `json:"profile_status"`
+	ProfileReviewReason string `json:"profile_review_reason"`
+}
+
+type UpdateProfileInput struct {
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatar_url"`
+	Gender    string `json:"gender"`
+	Bio       string `json:"bio"`
+}

@@ -19,6 +19,13 @@ type UserRepository struct {
 	db *sql.DB
 }
 
+type UpdateProfileParams struct {
+	Nickname  string
+	AvatarURL string
+	Gender    string
+	Bio       string
+}
+
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
@@ -55,6 +62,15 @@ func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*
 
 func (r *UserRepository) FindByUserID(ctx context.Context, userID int64) (*model.UserWithProfile, error) {
 	return r.findOne(ctx, "u.user_id = ?", userID)
+}
+
+func (r *UserRepository) UpdateProfile(ctx context.Context, userID int64, profile UpdateProfileParams) error {
+	_, err := r.db.ExecContext(ctx, `
+UPDATE user_profiles
+SET nickname = ?, avatar_url = ?, gender = ?, bio = ?
+WHERE user_id = ?
+`, profile.Nickname, nullableString(profile.AvatarURL), nullableString(profile.Gender), nullableString(profile.Bio), userID)
+	return err
 }
 
 func (r *UserRepository) findOne(ctx context.Context, where string, arg interface{}) (*model.UserWithProfile, error) {
@@ -97,6 +113,10 @@ LIMIT 1
 	}
 
 	return &result, nil
+}
+
+func nullableString(value string) sql.NullString {
+	return sql.NullString{String: value, Valid: value != ""}
 }
 
 func mapDuplicateError(err error) error {

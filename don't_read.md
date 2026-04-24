@@ -153,16 +153,17 @@ Docker 要求：
 
 请先输出实现计划、数据库 migration 设计、预计修改文件，等我确认后再写代码。
 
-## 第三轮提示词：用户资料模块
+## 第三轮提示词：用户资料模块 done
 
 你现在只完成 Step 3：用户资料模块。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“用户资料”部分
-3. docs/03_DATABASE_DESIGN.md 中 user_profiles 表
-4. docs/04_API_SPEC.md 中 user profile 相关接口
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“用户资料”部分
+4. docs/03_DATABASE_DESIGN.md 中 user_profiles 表
+5. docs/04_API_SPEC.md 中 user profile 相关接口
 
 当前任务目标：
 实现用户查看和修改个人资料。
@@ -206,16 +207,17 @@ Docker 要求：
 
 请先输出实现计划和预计修改文件，等我确认后再写代码。
 
-## 七、第四轮提示词：好友系统
+## 七、第四轮提示词：好友系统ing
 
 你现在只完成 Step 4：好友系统。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“好友系统”部分
-3. docs/03_DATABASE_DESIGN.md 中 friend_requests、friendships、block_relations 表
-4. docs/04_API_SPEC.md 中 friends 相关接口
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“好友系统”部分
+4. docs/03_DATABASE_DESIGN.md 中 friend_requests、friendships、block_relations 表
+5. docs/04_API_SPEC.md 中 friends 相关接口
 
 当前任务目标：
 实现搜索用户、好友申请、同意/拒绝、好友列表、删除好友、拉黑/解除拉黑。
@@ -686,3 +688,32 @@ WebSocket 要求：
 2. 不要新增新功能。
 3. 不要修改已通过的接口路径。
 4. 修复完成后说明修改文件和测试方法。
+
+# 启动
+
+## docker启动
+
+$env:MYSQL_ROOT_PASSWORD="rootpass"
+$env:MYSQL_PASSWORD="goimpass"
+docker compose up -d mysql redis
+
+## 后端启动
+
+cd backend
+$env:MYSQL_DSN="goim:goimpass@tcp(127.0.0.1:3307)/go_im?charset=utf8mb4&parseTime=true&loc=Local"
+$env:REDIS_ADDR="127.0.0.1:6379"
+$env:JWT_ACCESS_SECRET="local-access-secret"
+$env:JWT_REFRESH_SECRET="local-refresh-secret"
+go run ./cmd/server
+
+## 前端启动
+
+cd frontend
+npm.cmd install
+npm.cmd run dev
+
+## 浏览器打开
+
+cd frontend
+npm.cmd install
+npm.cmd run dev

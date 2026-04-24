@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 
 import * as authApi from '../api/auth'
 import type { UserInfo } from '../api/auth'
+import type { UserProfile } from '../api/user'
 
 interface AuthState {
   accessToken: string
@@ -52,6 +53,16 @@ export const useAuthStore = defineStore('auth', {
       this.user = user
       localStorage.setItem('access_token', accessToken)
       localStorage.setItem('refresh_token', refreshToken)
+      localStorage.setItem('current_user', JSON.stringify(user))
+    },
+    syncProfile(profile: UserProfile) {
+      const user = {
+        user_id: profile.user_id,
+        username: profile.username,
+        nickname: profile.nickname,
+        avatar_url: profile.avatar_url,
+      }
+      this.user = user
       localStorage.setItem('current_user', JSON.stringify(user))
     },
     clearAuth() {

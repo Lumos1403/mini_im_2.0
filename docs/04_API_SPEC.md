@@ -265,11 +265,40 @@ GET /api/users/me
 }
 ```
 
-### 4.2 修改当前用户资料
+### 4.2 获取当前用户资料
+
+```txt
+GET /api/users/me/profile
+```
+
+需要登录。
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "user_id": "123456789",
+    "username": "test001",
+    "nickname": "小明",
+    "avatar_url": "https://example.com/avatar.png",
+    "gender": "male",
+    "bio": "个性签名",
+    "profile_status": "normal",
+    "profile_review_reason": ""
+  }
+}
+```
+
+### 4.3 修改当前用户资料
 
 ```txt
 PUT /api/users/me/profile
 ```
+
+需要登录。
 
 请求：
 
@@ -282,7 +311,34 @@ PUT /api/users/me/profile
 }
 ```
 
-### 4.3 搜索用户
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "user_id": "123456789",
+    "username": "test001",
+    "nickname": "新昵称",
+    "avatar_url": "https://example.com/avatar.png",
+    "gender": "male",
+    "bio": "个性签名",
+    "profile_status": "normal",
+    "profile_review_reason": ""
+  }
+}
+```
+
+说明：
+
+```txt
+当前版本不做内容审核，不限制修改频率。
+客户端只能修改 avatar_url、nickname、gender、bio。
+profile_status、profile_review_reason 字段保留并由服务端返回，客户端不能修改。
+```
+
+### 4.4 搜索用户
 
 ```txt
 GET /api/users/search?keyword=小明&page=1&page_size=20

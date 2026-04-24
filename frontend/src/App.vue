@@ -3,6 +3,7 @@
     <nav class="app-nav">
       <RouterLink to="/login">登录</RouterLink>
       <RouterLink to="/register">注册</RouterLink>
+      <RouterLink to="/profile">资料</RouterLink>
       <RouterLink to="/chat">聊天</RouterLink>
     </nav>
     <RouterView />
