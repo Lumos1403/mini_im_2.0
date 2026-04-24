@@ -53,15 +53,18 @@ func main() {
 	}
 
 	userRepo := mysqlrepo.NewUserRepository(db)
+	friendRepo := mysqlrepo.NewFriendRepository(db)
 	tokenRepo := redisrepo.NewTokenRepository(redisClient)
 	agentService := service.NewAgentService()
 	authService := service.NewAuthService(userRepo, tokenRepo, tokenManager, idGenerator, agentService)
 	userService := service.NewUserService(userRepo)
+	friendService := service.NewFriendService(userRepo, friendRepo, idGenerator, nil)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
 
 	engine := router.New(router.Dependencies{
 		AuthHandler:    handler.NewAuthHandler(authService),
 		UserHandler:    handler.NewUserHandler(userService),
+		FriendHandler:  handler.NewFriendHandler(friendService),
 		AuthMiddleware: authMiddleware,
 	})
 	if err := engine.Run(cfg.Server.Address()); err != nil {

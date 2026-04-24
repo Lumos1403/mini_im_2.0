@@ -59,7 +59,7 @@ type SnowflakeConfig struct {
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port: getEnv("SERVER_PORT", "8080"),
+			Port: getEnv("SERVER_PORT", "8081"),
 			Mode: getEnv("SERVER_MODE", getEnv("GIN_MODE", ginDebugMode)),
 		},
 		MySQL: MySQLConfig{

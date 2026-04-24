@@ -107,6 +107,10 @@ GET /api/health
 40001 好友申请不存在
 40002 已经是好友
 40003 已被对方拉黑
+40004 好友申请待处理
+40005 不能添加自己
+40006 好友关系不存在
+40007 不能拉黑自己
 50001 消息不存在
 50002 消息不可撤回
 50003 消息已撤回
@@ -368,37 +372,35 @@ POST /api/friends/requests
 }
 ```
 
-### 5.2 获取收到的好友申请
+### 5.2 获取好友申请
 
 ```txt
-GET /api/friends/requests/received?page=1&page_size=20
+GET /api/friends/requests?direction=received&page=1&page_size=20
 ```
 
-### 5.3 获取发出的好友申请
+说明：
 
-```txt
-GET /api/friends/requests/sent?page=1&page_size=20
-```
+`direction` 可选值为 `received`、`sent`，不传时默认为 `received`。
 
-### 5.4 同意好友申请
+### 5.3 同意好友申请
 
 ```txt
 POST /api/friends/requests/{request_id}/accept
 ```
 
-### 5.5 拒绝好友申请
+### 5.4 拒绝好友申请
 
 ```txt
 POST /api/friends/requests/{request_id}/reject
 ```
 
-### 5.6 好友列表
+### 5.5 好友列表
 
 ```txt
 GET /api/friends
 ```
 
-### 5.7 删除好友
+### 5.6 删除好友
 
 ```txt
 DELETE /api/friends/{user_id}
@@ -406,13 +408,17 @@ DELETE /api/friends/{user_id}
 
 删除后双方好友关系失效，对方会话中显示系统提示。
 
-### 5.8 拉黑好友
+当前实现预留 system message 创建入口，消息表和 WebSocket 推送在后续阶段实现。
+
+### 5.7 拉黑好友
 
 ```txt
 POST /api/friends/{user_id}/block
 ```
 
-### 5.9 解除拉黑
+拉黑是单向关系，仅创建 `block_relations(blocker_id, blocked_id)`。
+
+### 5.8 解除拉黑
 
 ```txt
 DELETE /api/friends/{user_id}/block

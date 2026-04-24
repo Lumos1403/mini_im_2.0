@@ -163,20 +163,31 @@ CREATE TABLE user_profiles (
 ```sql
 CREATE TABLE friend_requests (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  request_id BIGINT NOT NULL UNIQUE,
+  request_id BIGINT NOT NULL,
   from_user_id BIGINT NOT NULL,
   to_user_id BIGINT NOT NULL,
   message VARCHAR(255) NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  pending_pair_key VARCHAR(64)
+    GENERATED ALWAYS AS (
+      CASE
+        WHEN status = 'pending' THEN CONCAT(LEAST(from_user_id, to_user_id), ':', GREATEST(from_user_id, to_user_id))
+        ELSE NULL
+      END
+    ) STORED,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_friend_request_pending (from_user_id, to_user_id, status),
+  UNIQUE KEY uk_friend_requests_request_id (request_id),
+  UNIQUE KEY uk_friend_requests_pending_pair (pending_pair_key),
   INDEX idx_friend_requests_to_status (to_user_id, status),
   INDEX idx_friend_requests_from_status (from_user_id, status),
   CONSTRAINT fk_friend_req_from FOREIGN KEY (from_user_id) REFERENCES users(user_id),
-  CONSTRAINT fk_friend_req_to FOREIGN KEY (to_user_id) REFERENCES users(user_id)
+  CONSTRAINT fk_friend_req_to FOREIGN KEY (to_user_id) REFERENCES users(user_id),
+  CONSTRAINT chk_friend_req_not_self CHECK (from_user_id <> to_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+说明：`pending_pair_key` 使用 MySQL 8 生成列，只对待处理申请建立唯一约束。这样可以防止同一对用户同时存在多条 pending 申请，同时允许历史 accepted/rejected 记录保留。
 
 ### 4.4 friendships 好友关系表
 
@@ -192,11 +203,12 @@ CREATE TABLE friendships (
   INDEX idx_friendships_user1_status (user_id_1, status),
   INDEX idx_friendships_user2_status (user_id_2, status),
   CONSTRAINT fk_friendships_user1 FOREIGN KEY (user_id_1) REFERENCES users(user_id),
-  CONSTRAINT fk_friendships_user2 FOREIGN KEY (user_id_2) REFERENCES users(user_id)
+  CONSTRAINT fk_friendships_user2 FOREIGN KEY (user_id_2) REFERENCES users(user_id),
+  CONSTRAINT chk_friendships_user_order CHECK (user_id_1 < user_id_2)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-要求：`user_id_1 < user_id_2`，由 service 层保证。
+要求：`user_id_1 < user_id_2`，由 service 层保证，数据库 CHECK 约束兜底。
 
 ### 4.5 block_relations 拉黑关系表
 
@@ -210,7 +222,8 @@ CREATE TABLE block_relations (
   INDEX idx_blocker (blocker_id),
   INDEX idx_blocked (blocked_id),
   CONSTRAINT fk_blocker FOREIGN KEY (blocker_id) REFERENCES users(user_id),
-  CONSTRAINT fk_blocked FOREIGN KEY (blocked_id) REFERENCES users(user_id)
+  CONSTRAINT fk_blocked FOREIGN KEY (blocked_id) REFERENCES users(user_id),
+  CONSTRAINT chk_block_not_self CHECK (blocker_id <> blocked_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 

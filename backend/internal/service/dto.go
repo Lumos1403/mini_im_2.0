@@ -1,5 +1,7 @@
 package service
 
+import "time"
+
 type RegisterInput struct {
 	Username string
 	Password string
@@ -53,4 +55,44 @@ type UpdateProfileInput struct {
 	AvatarURL string `json:"avatar_url"`
 	Gender    string `json:"gender"`
 	Bio       string `json:"bio"`
+}
+
+type PageOutput[T any] struct {
+	List     []T   `json:"list"`
+	Total    int64 `json:"total"`
+	Page     int   `json:"page"`
+	PageSize int   `json:"page_size"`
+}
+
+type SearchUsersInput struct {
+	Keyword  string
+	Page     int
+	PageSize int
+}
+
+type CreateFriendRequestInput struct {
+	ToUserID string `json:"to_user_id"`
+	Message  string `json:"message"`
+}
+
+type FriendRequestOutput struct {
+	RequestID  string     `json:"request_id"`
+	FromUserID string     `json:"from_user_id"`
+	ToUserID   string     `json:"to_user_id"`
+	User       UserOutput `json:"user"`
+	Message    string     `json:"message"`
+	Status     string     `json:"status"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+type CreateFriendRequestOutput struct {
+	RequestID string `json:"request_id"`
+	Status    string `json:"status"`
+}
+
+type FriendOutput struct {
+	User      UserOutput `json:"user"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }

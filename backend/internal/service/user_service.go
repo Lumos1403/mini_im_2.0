@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	apperrors "mini_im/backend/internal/pkg/errors"
@@ -62,6 +64,45 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID int64, input Upd
 	return s.GetProfile(ctx, userID)
 }
 
+func (s *UserService) SearchUsers(ctx context.Context, input SearchUsersInput) (*PageOutput[UserOutput], *apperrors.AppError) {
+	keyword := strings.TrimSpace(input.Keyword)
+	if keyword == "" {
+		return nil, apperrors.ErrInvalidParam
+	}
+
+	page, pageSize, offset := normalizePagination(input.Page, input.PageSize)
+	params := mysqlrepo.SearchUsersParams{
+		Keyword: keyword,
+		Limit:   pageSize,
+		Offset:  offset,
+	}
+	if isDigits(keyword) {
+		userID, err := strconv.ParseInt(keyword, 10, 64)
+		if err != nil || userID <= 0 {
+			return nil, apperrors.ErrInvalidParam
+		}
+		params.ByUserID = true
+		params.UserID = userID
+	}
+
+	users, total, err := s.userRepo.Search(ctx, params)
+	if err != nil {
+		return nil, apperrors.ErrInternal
+	}
+
+	outputs := make([]UserOutput, 0, len(users))
+	for i := range users {
+		outputs = append(outputs, toUserOutput(&users[i]))
+	}
+
+	return &PageOutput[UserOutput]{
+		List:     outputs,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
+}
+
 func normalizeProfileInput(input UpdateProfileInput) (UpdateProfileInput, *apperrors.AppError) {
 	profile := UpdateProfileInput{
 		Nickname:  strings.TrimSpace(input.Nickname),
@@ -79,4 +120,26 @@ func normalizeProfileInput(input UpdateProfileInput) (UpdateProfileInput, *apper
 	}
 
 	return profile, nil
+}
+
+func normalizePagination(page int, pageSize int) (int, int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	return page, pageSize, (page - 1) * pageSize
+}
+
+func isDigits(value string) bool {
+	for _, r := range value {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return value != ""
 }

@@ -20,9 +20,30 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 func (h *UserHandler) Register(group *gin.RouterGroup, authMiddleware gin.HandlerFunc) {
 	users := group.Group("/users")
 	users.Use(authMiddleware)
+	users.GET("/search", h.Search)
 	users.GET("/me", h.Me)
 	users.GET("/me/profile", h.Profile)
 	users.PUT("/me/profile", h.UpdateProfile)
+}
+
+func (h *UserHandler) Search(ctx *gin.Context) {
+	if _, ok := middleware.CurrentUserID(ctx); !ok {
+		response.Fail(ctx, apperrors.HTTPStatus(apperrors.ErrTokenInvalid), apperrors.ErrTokenInvalid)
+		return
+	}
+
+	page, pageSize := parsePageQuery(ctx)
+	output, appErr := h.userService.SearchUsers(ctx.Request.Context(), service.SearchUsersInput{
+		Keyword:  ctx.Query("keyword"),
+		Page:     page,
+		PageSize: pageSize,
+	})
+	if appErr != nil {
+		response.Fail(ctx, apperrors.HTTPStatus(appErr), appErr)
+		return
+	}
+
+	response.Success(ctx, output)
 }
 
 func (h *UserHandler) Me(ctx *gin.Context) {
