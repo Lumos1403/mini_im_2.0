@@ -9,8 +9,11 @@ import {
   listMessages,
   recallMessage,
   type Conversation,
+  type FileMessageExtra,
   type Message,
+  type MessageType,
 } from '../api/conversation'
+import { downloadFile, uploadFile, type FileUploadResult } from '../api/file'
 import { useAuthStore } from '../stores/auth'
 
 interface Envelope<T = unknown> {
@@ -61,14 +64,23 @@ type ChatMessage = Message & {
 }
 
 const recallNoticeStoragePrefix = 'mini_im:recall_notices:'
+const defaultMaxUploadSizeMB = 50
+const configuredMaxUploadSizeMB = Number(import.meta.env.VITE_FILE_MAX_SIZE_MB)
+const maxUploadSizeMB =
+  Number.isFinite(configuredMaxUploadSizeMB) && configuredMaxUploadSizeMB > 0
+    ? configuredMaxUploadSizeMB
+    : defaultMaxUploadSizeMB
+const maxUploadSizeBytes = maxUploadSizeMB * 1024 * 1024
 
 const auth = useAuthStore()
 const conversations = ref<Conversation[]>([])
 const activeConversationID = ref('')
 const messages = ref<ChatMessage[]>([])
 const draft = ref('')
+const fileInput = ref<HTMLInputElement | null>(null)
 const loadingConversations = ref(false)
 const loadingMessages = ref(false)
+const uploadingFile = ref(false)
 const hasMore = ref(false)
 const errorMessage = ref('')
 const wsConnected = ref(false)
@@ -82,6 +94,7 @@ const activeConversation = computed(() =>
 )
 
 const canSend = computed(() => wsConnected.value && activeConversationID.value && draft.value.trim().length > 0)
+const canUploadFile = computed(() => wsConnected.value && Boolean(activeConversationID.value) && !uploadingFile.value)
 
 onMounted(async () => {
   await loadConversationList()
@@ -209,6 +222,86 @@ function sendMessage() {
   )
 }
 
+function triggerFileSelect() {
+  if (!canUploadFile.value) {
+    return
+  }
+  fileInput.value?.click()
+}
+
+async function handleFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const selectedFile = input.files?.[0]
+  input.value = ''
+  if (!selectedFile) {
+    return
+  }
+
+  if (!socket || socket.readyState !== WebSocket.OPEN || !activeConversationID.value) {
+    errorMessage.value = 'WebSocket 未连接，暂不能发送文件'
+    return
+  }
+  if (selectedFile.size > maxUploadSizeBytes) {
+    errorMessage.value = `文件不能超过 ${maxUploadSizeMB}MB`
+    return
+  }
+
+  uploadingFile.value = true
+  errorMessage.value = ''
+  try {
+    const uploaded = await uploadFile(selectedFile)
+    sendUploadedFileMessage(uploaded)
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  } finally {
+    uploadingFile.value = false
+  }
+}
+
+function sendUploadedFileMessage(uploaded: FileUploadResult) {
+  if (!socket || socket.readyState !== WebSocket.OPEN || !activeConversationID.value) {
+    errorMessage.value = 'WebSocket 未连接，文件已上传但消息未发送'
+    return
+  }
+
+  const clientMsgID = crypto.randomUUID()
+  const seq = crypto.randomUUID()
+  const localExtra: Record<string, unknown> = {
+    file_id: uploaded.file_id,
+    file_name: uploaded.original_name,
+    file_size: uploaded.file_size,
+    mime_type: uploaded.mime_type,
+  }
+  const localMessage: ChatMessage = {
+    client_msg_id: clientMsgID,
+    message_id: clientMsgID,
+    conversation_id: activeConversationID.value,
+    sender_id: auth.user?.user_id || '',
+    message_type: 'file',
+    content: uploaded.file_id,
+    extra_json: localExtra,
+    send_status: 'sending',
+    created_at: new Date().toISOString(),
+  }
+
+  messages.value = [...messages.value, localMessage]
+  updateConversationLastMessage(activeConversationID.value, uploaded.file_id, 'file')
+
+  socket.send(
+    JSON.stringify({
+      seq,
+      type: 'chat.message.send',
+      data: {
+        conversation_id: activeConversationID.value,
+        client_msg_id: clientMsgID,
+        message_type: 'file',
+        content: uploaded.file_id,
+      },
+      timestamp: Date.now(),
+    }),
+  )
+}
+
 function handleEnvelope(raw: string) {
   let envelope: Envelope
   try {
@@ -266,14 +359,14 @@ function applyFailed(data: FailedData) {
 
 function applyReceive(data: Message) {
   if (data.conversation_id !== activeConversationID.value) {
-    updateConversationLastMessage(data.conversation_id, data.content)
+    updateConversationLastMessage(data.conversation_id, data.content, data.message_type)
     return
   }
   if (messages.value.some((message) => message.message_id === data.message_id)) {
     return
   }
   messages.value = [...messages.value, { ...data }]
-  updateConversationLastMessage(data.conversation_id, data.content)
+  updateConversationLastMessage(data.conversation_id, data.content, data.message_type)
 }
 
 function applyRecalled(data: RecalledData) {
@@ -379,7 +472,7 @@ function showRecallNotice(
   persistRecallNotice(messageID, conversationID, effectiveRecalledAt, effectiveEditableUntil)
 }
 
-function updateConversationLastMessage(conversationID: string, content: string) {
+function updateConversationLastMessage(conversationID: string, content: string, messageType: MessageType = 'text') {
   conversations.value = conversations.value.map((item) => {
     if (item.conversation_id !== conversationID) {
       return item
@@ -387,12 +480,103 @@ function updateConversationLastMessage(conversationID: string, content: string) 
     return {
       ...item,
       last_message: {
-        content,
-        message_type: 'text',
+        content: messageType === 'file' ? '文件' : content,
+        message_type: messageType,
         created_at: new Date().toISOString(),
       },
     }
   })
+}
+
+function formatConversationLastMessage(lastMessage: Conversation['last_message']) {
+  if (!lastMessage) {
+    return '暂无消息'
+  }
+  if (lastMessage.message_type === 'file') {
+    return '文件'
+  }
+  return lastMessage.content || '暂无消息'
+}
+
+function getFileExtra(message: ChatMessage): FileMessageExtra {
+  const extra = message.extra_json || {}
+  return {
+    file_id: readString(extra.file_id),
+    file_name: readString(extra.file_name),
+    file_size: readNumber(extra.file_size),
+    mime_type: readString(extra.mime_type),
+  }
+}
+
+function getFileDisplayName(message: ChatMessage) {
+  return getFileExtra(message).file_name || '文件'
+}
+
+function getFileMetaText(message: ChatMessage) {
+  const extra = getFileExtra(message)
+  return `${formatFileSize(extra.file_size)} / ${extra.mime_type || '类型未知'}`
+}
+
+function getFileDownloadID(message: ChatMessage) {
+  const extra = getFileExtra(message)
+  return extra.file_id || message.content.trim()
+}
+
+async function downloadVisibleFile(message: ChatMessage) {
+  const fileID = getFileDownloadID(message)
+  if (!fileID) {
+    errorMessage.value = '文件信息缺失，无法下载'
+    return
+  }
+
+  errorMessage.value = ''
+  try {
+    const result = await downloadFile(fileID)
+    triggerBrowserDownload(result.blob, getFileExtra(message).file_name || result.fileName || '文件')
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  }
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+function formatFileSize(size?: number) {
+  if (typeof size !== 'number' || !Number.isFinite(size) || size < 0) {
+    return '大小未知'
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = size
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function readString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function readNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
 }
 
 function buildWebSocketURL(token: string) {
@@ -626,7 +810,7 @@ function getErrorMessage(error: unknown) {
         <span class="avatar">{{ conversation.title.slice(0, 1) || '#' }}</span>
         <span class="conversation-meta">
           <strong>{{ conversation.title || '未命名会话' }}</strong>
-          <small>{{ conversation.last_message?.content || '暂无消息' }}</small>
+          <small>{{ formatConversationLastMessage(conversation.last_message) }}</small>
         </span>
       </button>
       <div v-if="!loadingConversations && conversations.length === 0" class="empty-text">暂无会话</div>
@@ -678,7 +862,22 @@ function getErrorMessage(error: unknown) {
               !
             </span>
             <div class="message-bubble">
-              <p>{{ message.content }}</p>
+              <div v-if="message.message_type === 'file'" class="file-card">
+                <span class="file-icon">文件</span>
+                <span class="file-info">
+                  <strong>{{ getFileDisplayName(message) }}</strong>
+                  <small>{{ getFileMetaText(message) }}</small>
+                </span>
+                <button
+                  class="file-download-button"
+                  type="button"
+                  :disabled="!getFileDownloadID(message)"
+                  @click="downloadVisibleFile(message)"
+                >
+                  下载
+                </button>
+              </div>
+              <p v-else>{{ message.content }}</p>
               <small>{{ message.send_status === 'sending' ? '发送中' : message.created_at }}</small>
               <div class="message-actions">
                 <button v-if="canDelete(message)" type="button" @click="deleteVisibleMessage(message)">
@@ -694,6 +893,15 @@ function getErrorMessage(error: unknown) {
       </div>
 
       <footer class="composer">
+        <input ref="fileInput" class="hidden-file-input" type="file" @change="handleFileSelected" />
+        <button
+          class="file-upload-button"
+          type="button"
+          :disabled="!canUploadFile"
+          @click="triggerFileSelect"
+        >
+          {{ uploadingFile ? '上传中' : '文件' }}
+        </button>
         <textarea
           v-model="draft"
           maxlength="2000"
@@ -887,6 +1095,80 @@ function getErrorMessage(error: unknown) {
   color: rgba(255, 255, 255, 0.76);
 }
 
+.file-card {
+  display: flex;
+  width: min(360px, 72vw);
+  max-width: 100%;
+  align-items: center;
+  gap: 10px;
+}
+
+.file-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eef4ff;
+  color: #175cd3;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.message-row.mine .file-icon {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.file-info {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.file-info strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-info small {
+  margin: 0;
+  color: #667085;
+}
+
+.message-row.mine .file-info small {
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.file-download-button {
+  flex: 0 0 auto;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: #eef4ff;
+  color: #175cd3;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.message-row.mine .file-download-button {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+}
+
+.file-download-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 .failed-mark {
   display: grid;
   width: 18px;
@@ -938,6 +1220,14 @@ function getErrorMessage(error: unknown) {
   flex: 0 0 96px;
   border-top: 1px solid #dde3ee;
   border-bottom: 0;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.file-upload-button {
+  flex: 0 0 auto;
 }
 
 .composer textarea {

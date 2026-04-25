@@ -22,12 +22,21 @@ export interface Conversation {
   is_muted: boolean
 }
 
+export type MessageType = 'text' | 'emoji' | 'file' | 'system'
+
+export interface FileMessageExtra {
+  file_id?: string
+  file_name?: string
+  file_size?: number
+  mime_type?: string
+}
+
 export interface Message {
   client_msg_id: string
   message_id: string
   conversation_id: string
   sender_id: string
-  message_type: 'text' | 'emoji' | 'file' | 'system'
+  message_type: MessageType
   content: string
   extra_json: Record<string, unknown>
   send_status: string
