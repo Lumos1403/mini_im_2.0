@@ -104,9 +104,20 @@ frontend/
 ```txt
 左侧：会话列表
 中间：聊天窗口
-右侧：用户资料 / 群资料 / 成员列表，可折叠
+右侧：好友面板 / 用户资料 / 群资料 / 成员列表，可折叠
 顶部：当前聊天对象信息
 底部：消息输入区
+```
+
+当前好友面板：
+
+```txt
+搜索用户
+好友申请列表
+好友列表
+打开聊天
+删除好友
+拉黑 / 解除拉黑
 ```
 
 ### 个人资料页
@@ -190,6 +201,39 @@ disconnect
 sendMessage
 handleEvent
 reconnect
+```
+
+### friend store
+
+保存：
+
+```txt
+好友列表
+收到的好友申请
+用户搜索结果
+好友操作 loading / error / notice 状态
+```
+
+方法：
+
+```txt
+loadFriends
+loadReceivedRequests
+search
+sendFriendRequest
+acceptRequest
+rejectRequest
+removeFriend
+block
+unblock
+```
+
+说明：
+
+```txt
+好友列表拉黑状态以后端 is_blocked_by_me 为准。
+打开好友聊天时优先使用好友列表返回的 conversation_id。
+缺少 conversation_id 时只能使用会话列表的 peer_user_id 兜底匹配，不允许按 nickname 或 avatar_url 匹配。
 ```
 
 ## 4. HTTP 请求封装

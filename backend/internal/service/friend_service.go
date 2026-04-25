@@ -196,9 +196,14 @@ func (s *FriendService) ListFriends(ctx context.Context, userID int64, page int,
 	outputs := make([]FriendOutput, 0, len(items))
 	for i := range items {
 		outputs = append(outputs, FriendOutput{
-			User:      toUserOutput(&items[i].User),
-			CreatedAt: items[i].Friendship.CreatedAt,
-			UpdatedAt: items[i].Friendship.UpdatedAt,
+			FriendUserID:   formatID(items[i].User.User.UserID),
+			Nickname:       items[i].User.Profile.Nickname,
+			AvatarURL:      items[i].User.Profile.AvatarURL.String,
+			Bio:            items[i].User.Profile.Bio.String,
+			ConversationID: formatOptionalID(items[i].ConversationID),
+			IsBlockedByMe:  items[i].IsBlockedByMe,
+			CreatedAt:      items[i].Friendship.CreatedAt,
+			UpdatedAt:      items[i].Friendship.UpdatedAt,
 		})
 	}
 
@@ -291,6 +296,13 @@ func parsePositiveID(value string) (int64, *apperrors.AppError) {
 		return 0, apperrors.ErrInvalidParam
 	}
 	return id, nil
+}
+
+func formatOptionalID(id sql.NullInt64) string {
+	if !id.Valid || id.Int64 <= 0 {
+		return ""
+	}
+	return formatID(id.Int64)
 }
 
 func toFriendRequestOutput(item *model.FriendRequestWithUser) FriendRequestOutput {

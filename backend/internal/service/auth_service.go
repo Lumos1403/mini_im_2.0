@@ -193,6 +193,16 @@ func toUserOutput(user *model.UserWithProfile) UserOutput {
 	}
 }
 
+func toUserSearchOutput(user *model.UserWithProfile) UserSearchOutput {
+	return UserSearchOutput{
+		UserID:    formatID(user.User.UserID),
+		Username:  user.User.Username,
+		Nickname:  user.Profile.Nickname,
+		AvatarURL: user.Profile.AvatarURL.String,
+		Bio:       user.Profile.Bio.String,
+	}
+}
+
 func toProfileOutput(user *model.UserWithProfile) ProfileOutput {
 	return ProfileOutput{
 		UserID:              formatID(user.User.UserID),

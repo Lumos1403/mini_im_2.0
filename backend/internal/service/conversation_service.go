@@ -48,6 +48,9 @@ func toConversationOutput(item *model.ConversationListItem) ConversationOutput {
 	if item.ConversationType == model.ConversationTypePrivate && item.Peer.User.UserID > 0 {
 		output.Title = item.Peer.Profile.Nickname
 		output.AvatarURL = item.Peer.Profile.AvatarURL.String
+		output.PeerUserID = formatID(item.Peer.User.UserID)
+		output.PeerNickname = item.Peer.Profile.Nickname
+		output.PeerAvatarURL = item.Peer.Profile.AvatarURL.String
 	}
 
 	return output

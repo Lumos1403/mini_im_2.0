@@ -25,3 +25,14 @@ export function unwrap<T>(response: ApiResponse<T>): T {
   }
   return response.data
 }
+
+export function getApiErrorMessage(error: unknown): string {
+  if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
+    const message = error.response?.data?.message
+    if (message) {
+      return message
+    }
+  }
+
+  return error instanceof Error ? error.message : '请求失败'
+}

@@ -14,6 +14,8 @@ import {
   type MessageType,
 } from '../api/conversation'
 import { downloadFile, uploadFile, type FileUploadResult } from '../api/file'
+import type { FriendItem } from '../api/friend'
+import FriendPanel from '../components/friend/FriendPanel.vue'
 import { useAuthStore } from '../stores/auth'
 
 interface Envelope<T = unknown> {
@@ -135,6 +137,33 @@ async function selectConversation(conversationID: string) {
   messages.value = []
   hasMore.value = false
   await loadCurrentMessages('')
+}
+
+async function openFriendChat(friend: FriendItem) {
+  errorMessage.value = ''
+
+  let conversationID = friend.conversation_id
+  if (!conversationID) {
+    await loadConversationList()
+    conversationID = findFriendConversationID(friend.friend_user_id)
+  } else if (!conversations.value.some((item) => item.conversation_id === conversationID)) {
+    await loadConversationList()
+  }
+
+  if (!conversationID) {
+    errorMessage.value = '未找到该好友会话，请刷新会话列表后重试'
+    return
+  }
+
+  await selectConversation(conversationID)
+}
+
+function findFriendConversationID(friendUserID: string) {
+  return (
+    conversations.value.find(
+      (item) => item.conversation_type === 'private' && item.peer_user_id === friendUserID,
+    )?.conversation_id || ''
+  )
 }
 
 async function loadCurrentMessages(cursor: string) {
@@ -911,13 +940,15 @@ function getErrorMessage(error: unknown) {
         <button type="button" :disabled="!canSend" @click="sendMessage">发送</button>
       </footer>
     </section>
+
+    <FriendPanel @open-chat="openFriendChat" />
   </section>
 </template>
 
 <style scoped>
 .chat-shell {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) 340px;
   height: calc(100vh - 56px);
   height: calc(100dvh - 56px);
   min-height: 0;
@@ -1283,10 +1314,16 @@ function getErrorMessage(error: unknown) {
   font-size: 13px;
 }
 
+@media (max-width: 1080px) {
+  .chat-shell {
+    grid-template-columns: 240px minmax(0, 1fr) 320px;
+  }
+}
+
 @media (max-width: 720px) {
   .chat-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(150px, 34%) minmax(0, 1fr);
+    grid-template-rows: minmax(150px, 24%) minmax(320px, 1fr) minmax(260px, 38%);
   }
 
   .conversation-list {

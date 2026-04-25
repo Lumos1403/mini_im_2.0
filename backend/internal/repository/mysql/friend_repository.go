@@ -239,6 +239,28 @@ WHERE (f.user_id_1 = ? OR f.user_id_2 = ?)
 	rows, err := r.db.QueryContext(ctx, `
 SELECT
   f.id, f.user_id_1, f.user_id_2, f.status, f.created_at, f.updated_at,
+  (
+    SELECT c.conversation_id
+    FROM conversations c
+    INNER JOIN conversation_members self_cm
+      ON self_cm.conversation_id = c.conversation_id
+      AND self_cm.user_id = ?
+      AND self_cm.status = ?
+    INNER JOIN conversation_members peer_cm
+      ON peer_cm.conversation_id = c.conversation_id
+      AND peer_cm.user_id = u.user_id
+      AND peer_cm.status = ?
+    WHERE c.conversation_type = ?
+      AND c.status = ?
+    LIMIT 1
+  ) AS conversation_id,
+  EXISTS (
+    SELECT 1
+    FROM block_relations br
+    WHERE br.blocker_id = ?
+      AND br.blocked_id = u.user_id
+    LIMIT 1
+  ) AS is_blocked_by_me,
   u.id, u.user_id, u.username, u.password_hash, u.user_type, u.status, u.created_at, u.updated_at, u.deleted_at,
   p.id, p.user_id, p.nickname, p.avatar_url, p.gender, p.bio, p.profile_status, p.profile_review_reason, p.created_at, p.updated_at
 FROM friendships f
@@ -249,7 +271,7 @@ WHERE (f.user_id_1 = ? OR f.user_id_2 = ?)
   AND u.deleted_at IS NULL
 ORDER BY f.updated_at DESC
 LIMIT ? OFFSET ?
-`, userID, userID, userID, model.FriendshipStatusNormal, limit, offset)
+`, userID, model.ConversationMemberStatusActive, model.ConversationMemberStatusActive, model.ConversationTypePrivate, model.ConversationStatusNormal, userID, userID, userID, userID, model.FriendshipStatusNormal, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -369,6 +391,8 @@ func scanFriendshipWithUser(row scanner) (*model.FriendshipWithUser, error) {
 		&item.Friendship.Status,
 		&item.Friendship.CreatedAt,
 		&item.Friendship.UpdatedAt,
+		&item.ConversationID,
+		&item.IsBlockedByMe,
 		&item.User.User.ID,
 		&item.User.User.UserID,
 		&item.User.User.Username,

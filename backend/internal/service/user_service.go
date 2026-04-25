@@ -64,7 +64,7 @@ func (s *UserService) UpdateProfile(ctx context.Context, userID int64, input Upd
 	return s.GetProfile(ctx, userID)
 }
 
-func (s *UserService) SearchUsers(ctx context.Context, input SearchUsersInput) (*PageOutput[UserOutput], *apperrors.AppError) {
+func (s *UserService) SearchUsers(ctx context.Context, input SearchUsersInput) (*PageOutput[UserSearchOutput], *apperrors.AppError) {
 	keyword := strings.TrimSpace(input.Keyword)
 	if keyword == "" {
 		return nil, apperrors.ErrInvalidParam
@@ -90,12 +90,12 @@ func (s *UserService) SearchUsers(ctx context.Context, input SearchUsersInput) (
 		return nil, apperrors.ErrInternal
 	}
 
-	outputs := make([]UserOutput, 0, len(users))
+	outputs := make([]UserSearchOutput, 0, len(users))
 	for i := range users {
-		outputs = append(outputs, toUserOutput(&users[i]))
+		outputs = append(outputs, toUserSearchOutput(&users[i]))
 	}
 
-	return &PageOutput[UserOutput]{
+	return &PageOutput[UserSearchOutput]{
 		List:     outputs,
 		Total:    total,
 		Page:     page,

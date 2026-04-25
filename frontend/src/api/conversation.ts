@@ -12,6 +12,9 @@ export interface Conversation {
   conversation_type: string
   title: string
   avatar_url: string
+  peer_user_id: string
+  peer_nickname: string
+  peer_avatar_url: string
   last_message: {
     content: string
     message_type: string

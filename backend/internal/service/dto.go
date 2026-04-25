@@ -42,6 +42,14 @@ type UserOutput struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
+type UserSearchOutput struct {
+	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
+	Nickname  string `json:"nickname"`
+	AvatarURL string `json:"avatar_url"`
+	Bio       string `json:"bio"`
+}
+
 type ProfileOutput struct {
 	UserID              string `json:"user_id"`
 	Username            string `json:"username"`
@@ -95,9 +103,14 @@ type CreateFriendRequestOutput struct {
 }
 
 type FriendOutput struct {
-	User      UserOutput `json:"user"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	FriendUserID   string    `json:"friend_user_id"`
+	Nickname       string    `json:"nickname"`
+	AvatarURL      string    `json:"avatar_url"`
+	Bio            string    `json:"bio"`
+	ConversationID string    `json:"conversation_id"`
+	IsBlockedByMe  bool      `json:"is_blocked_by_me"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type ConversationOutput struct {
@@ -105,6 +118,9 @@ type ConversationOutput struct {
 	ConversationType string                         `json:"conversation_type"`
 	Title            string                         `json:"title"`
 	AvatarURL        string                         `json:"avatar_url"`
+	PeerUserID       string                         `json:"peer_user_id"`
+	PeerNickname     string                         `json:"peer_nickname"`
+	PeerAvatarURL    string                         `json:"peer_avatar_url"`
 	LastMessage      *ConversationLastMessageOutput `json:"last_message"`
 	UnreadCount      int                            `json:"unread_count"`
 	IsPinned         bool                           `json:"is_pinned"`

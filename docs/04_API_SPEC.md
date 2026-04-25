@@ -350,11 +350,35 @@ profile_status、profile_review_reason 字段保留并由服务端返回，客�
 GET /api/users/search?keyword=小明&page=1&page_size=20
 ```
 
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "user_id": "123456789",
+        "username": "test001",
+        "nickname": "小明",
+        "avatar_url": "https://example.com/avatar.png",
+        "bio": "个性签名"
+      }
+    ],
+    "page": 1,
+    "page_size": 20,
+    "total": 1
+  }
+}
+```
+
 说明：
 
 ```txt
 keyword 如果是纯数字，可优先按 user_id 精确匹配
 否则按 nickname 模糊匹配
+bio 用于前端搜索结果展示个性签名
 ```
 
 ## 5. 好友接口
@@ -402,6 +426,40 @@ POST /api/friends/requests/{request_id}/reject
 GET /api/friends
 ```
 
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "friend_user_id": "123456789",
+        "nickname": "小明",
+        "avatar_url": "https://example.com/avatar.png",
+        "bio": "个性签名",
+        "conversation_id": "111111",
+        "is_blocked_by_me": false,
+        "created_at": "2026-04-24T12:00:00+08:00",
+        "updated_at": "2026-04-24T12:00:00+08:00"
+      }
+    ],
+    "page": 1,
+    "page_size": 20,
+    "total": 1
+  }
+}
+```
+
+说明：
+
+```txt
+friend_user_id 是好友的 user_id。
+conversation_id 是双方私聊会话 ID，前端打开聊天时应优先使用该字段。
+is_blocked_by_me 表示当前登录用户是否已单向拉黑该好友。
+```
+
 ### 5.6 删除好友
 
 ```txt
@@ -442,6 +500,9 @@ GET /api/conversations?page=1&page_size=20
   "conversation_type": "private",
   "title": "小明",
   "avatar_url": "",
+  "peer_user_id": "123456789",
+  "peer_nickname": "小明",
+  "peer_avatar_url": "",
   "last_message": {
     "content": "你好",
     "message_type": "text",
@@ -453,7 +514,7 @@ GET /api/conversations?page=1&page_size=20
 }
 ```
 
-当前实现范围：返回当前登录用户可见的会话列表；private 会话标题和头像取对方用户资料。消息模块尚未实现时，`last_message` 返回 `null`。
+当前实现范围：返回当前登录用户可见的会话列表；private 会话标题和头像取对方用户资料。private 会话额外返回 `peer_user_id`、`peer_nickname`、`peer_avatar_url`，用于前端在缺少好友列表 `conversation_id` 时按对方 user_id 兜底定位会话，禁止按昵称或头像匹配。消息模块尚未实现时，`last_message` 返回 `null`。
 
 ### 6.2 获取会话消息
 

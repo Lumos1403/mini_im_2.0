@@ -48,6 +48,8 @@ type FriendRequestWithUser struct {
 }
 
 type FriendshipWithUser struct {
-	Friendship Friendship
-	User       UserWithProfile
+	Friendship     Friendship
+	User           UserWithProfile
+	ConversationID sql.NullInt64
+	IsBlockedByMe  bool
 }

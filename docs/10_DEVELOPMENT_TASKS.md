@@ -157,6 +157,19 @@ GET /api/friends
 
 实现 block_relations。
 
+## Step 4.6：好友接口字段补齐与前端 GUI 修复
+
+补齐好友前端 GUI 依赖的 HTTP 响应字段，并修复打开聊天的可靠定位逻辑。
+
+```txt
+GET /api/users/search 返回 bio
+GET /api/friends 返回 friend_user_id、nickname、avatar_url、bio、conversation_id、is_blocked_by_me
+GET /api/conversations 的 private 会话返回 peer_user_id、peer_nickname、peer_avatar_url
+好友列表拉黑按钮状态以后端 is_blocked_by_me 为准
+打开好友聊天优先使用 conversation_id，缺失时使用 peer_user_id 兜底
+不按 nickname 或 avatar_url 匹配会话
+```
+
 ## 阶段 4：会话系统
 
 ### Task 4.1 会话表和状态表
