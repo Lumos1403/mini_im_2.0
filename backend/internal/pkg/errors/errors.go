@@ -50,6 +50,8 @@ var (
 	ErrFriendshipNotFound    = New(40006, "friendship not found")
 	ErrCannotBlockSelf       = New(40007, "cannot block yourself")
 	ErrMessageNotFound       = New(50001, "message not found")
+	ErrMessageNotRecallable  = New(50002, "message not recallable")
+	ErrMessageRecalled       = New(50003, "message already recalled")
 	ErrMessageAccessDenied   = New(50004, "message access denied")
 	ErrMessageInvalidContent = New(50005, "message content invalid")
 	ErrMessageConflict       = New(50006, "client_msg_id already exists with different content")
@@ -82,6 +84,10 @@ func HTTPStatus(err *AppError) int {
 		return http.StatusBadRequest
 	case 50001:
 		return http.StatusNotFound
+	case 50002:
+		return http.StatusBadRequest
+	case 50003:
+		return http.StatusConflict
 	case 50004:
 		return http.StatusForbidden
 	case 50005:

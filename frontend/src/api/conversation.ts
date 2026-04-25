@@ -27,7 +27,7 @@ export interface Message {
   message_id: string
   conversation_id: string
   sender_id: string
-  message_type: 'text'
+  message_type: 'text' | 'emoji' | 'file' | 'system'
   content: string
   extra_json: Record<string, unknown>
   send_status: string
@@ -39,6 +39,16 @@ export interface MessagePage {
   next_cursor: string
   has_more: boolean
   limit: number
+}
+
+export interface RecallMessageResult {
+  message_id: string
+  editable_until: string
+}
+
+export interface RecallEditCache {
+  message_id: string
+  content: string
 }
 
 export async function listConversations(page = 1, pageSize = 50): Promise<PageResult<Conversation>> {
@@ -58,5 +68,31 @@ export async function listMessages(conversationID: string, cursor = '', limit = 
       limit,
     },
   })
+  return unwrap(data)
+}
+
+export async function deleteMessage(conversationID: string, messageID: string): Promise<void> {
+  const { data } = await http.delete<ApiResponse<Record<string, never>>>(
+    `/api/conversations/${conversationID}/messages/${messageID}`,
+  )
+  unwrap(data)
+}
+
+export async function clearConversationMessages(conversationID: string): Promise<void> {
+  const { data } = await http.delete<ApiResponse<Record<string, never>>>(
+    `/api/conversations/${conversationID}/messages`,
+  )
+  unwrap(data)
+}
+
+export async function recallMessage(messageID: string): Promise<RecallMessageResult> {
+  const { data } = await http.post<ApiResponse<RecallMessageResult>>(`/api/messages/${messageID}/recall`)
+  return unwrap(data)
+}
+
+export async function getRecallEditCache(messageID: string): Promise<RecallEditCache> {
+  const { data } = await http.get<ApiResponse<RecallEditCache>>(
+    `/api/messages/${messageID}/recall-edit-cache`,
+  )
   return unwrap(data)
 }

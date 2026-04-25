@@ -164,3 +164,20 @@ type MessagePageOutput struct {
 	HasMore    bool            `json:"has_more"`
 	Limit      int             `json:"limit"`
 }
+
+type RecallMessageOutput struct {
+	MessageID     string `json:"message_id"`
+	EditableUntil string `json:"editable_until"`
+}
+
+type RecallEditCacheOutput struct {
+	MessageID string `json:"message_id"`
+	Content   string `json:"content"`
+}
+
+type MessageRecalledEventOutput struct {
+	MessageID      string `json:"message_id"`
+	ConversationID string `json:"conversation_id"`
+	RecalledBy     string `json:"recalled_by"`
+	RecalledAt     string `json:"recalled_at"`
+}

@@ -2,8 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import {
+  clearConversationMessages,
+  deleteMessage,
+  getRecallEditCache,
   listConversations,
   listMessages,
+  recallMessage,
   type Conversation,
   type Message,
 } from '../api/conversation'
@@ -34,9 +38,29 @@ interface FailedData {
   server_time?: string
 }
 
+interface RecalledData {
+  message_id: string
+  conversation_id: string
+  recalled_by: string
+  recalled_at: string
+}
+
+interface StoredRecallNotice {
+  user_id: string
+  conversation_id: string
+  message_id: string
+  recalled_at: string
+  editable_until: string
+}
+
 type ChatMessage = Message & {
   error_message?: string
+  is_recall_notice?: boolean
+  recalled_message_id?: string
+  editable_until?: string
 }
+
+const recallNoticeStoragePrefix = 'mini_im:recall_notices:'
 
 const auth = useAuthStore()
 const conversations = ref<Conversation[]>([])
@@ -48,8 +72,10 @@ const loadingMessages = ref(false)
 const hasMore = ref(false)
 const errorMessage = ref('')
 const wsConnected = ref(false)
+const recallNoticeNow = ref(Date.now())
 
 let socket: WebSocket | null = null
+let recallNoticeTimer: number | undefined
 
 const activeConversation = computed(() =>
   conversations.value.find((item) => item.conversation_id === activeConversationID.value),
@@ -60,11 +86,16 @@ const canSend = computed(() => wsConnected.value && activeConversationID.value &
 onMounted(async () => {
   await loadConversationList()
   connectWebSocket()
+  startRecallNoticeExpiryTimer()
 })
 
 onBeforeUnmount(() => {
   socket?.close()
   socket = null
+  if (recallNoticeTimer) {
+    window.clearInterval(recallNoticeTimer)
+    recallNoticeTimer = undefined
+  }
 })
 
 async function loadConversationList() {
@@ -103,6 +134,7 @@ async function loadCurrentMessages(cursor: string) {
     const result = await listMessages(activeConversationID.value, cursor)
     const incoming = result.list.map((item) => ({ ...item }))
     messages.value = cursor ? [...incoming, ...messages.value] : incoming
+    mergeStoredRecallNotices(activeConversationID.value)
     hasMore.value = result.has_more
   } catch (error) {
     errorMessage.value = getErrorMessage(error)
@@ -112,7 +144,7 @@ async function loadCurrentMessages(cursor: string) {
 }
 
 async function loadOlderMessages() {
-  const cursor = messages.value[0]?.message_id
+  const cursor = messages.value.find((message) => !message.is_recall_notice && isPersistedMessage(message))?.message_id
   if (!cursor || loadingMessages.value) {
     return
   }
@@ -195,6 +227,10 @@ function handleEnvelope(raw: string) {
   }
   if (envelope.type === 'chat.message.receive') {
     applyReceive(envelope.data as Message)
+    return
+  }
+  if (envelope.type === 'chat.message.recalled') {
+    applyRecalled(envelope.data as RecalledData)
   }
 }
 
@@ -240,6 +276,109 @@ function applyReceive(data: Message) {
   updateConversationLastMessage(data.conversation_id, data.content)
 }
 
+function applyRecalled(data: RecalledData) {
+  if (data.conversation_id !== activeConversationID.value) {
+    return
+  }
+
+  messages.value = messages.value.filter((message) => message.message_id !== data.message_id)
+  if (data.recalled_by === auth.user?.user_id) {
+    showRecallNotice(data.message_id, data.conversation_id, '', data.recalled_at)
+  }
+}
+
+async function deleteVisibleMessage(message: ChatMessage) {
+  if (!canDelete(message)) {
+    return
+  }
+
+  errorMessage.value = ''
+  try {
+    await deleteMessage(message.conversation_id, message.message_id)
+    messages.value = messages.value.filter((item) => item.message_id !== message.message_id)
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  }
+}
+
+async function clearCurrentConversation() {
+  if (!activeConversationID.value) {
+    return
+  }
+
+  errorMessage.value = ''
+  try {
+    await clearConversationMessages(activeConversationID.value)
+    removeStoredRecallNoticesByConversation(activeConversationID.value)
+    messages.value = []
+    hasMore.value = false
+    conversations.value = conversations.value.map((item) => {
+      if (item.conversation_id !== activeConversationID.value) {
+        return item
+      }
+      return {
+        ...item,
+        last_message: null,
+        unread_count: 0,
+      }
+    })
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  }
+}
+
+async function recallVisibleMessage(message: ChatMessage) {
+  if (!canRecall(message)) {
+    return
+  }
+
+  errorMessage.value = ''
+  try {
+    const result = await recallMessage(message.message_id)
+    messages.value = messages.value.filter((item) => item.message_id !== message.message_id)
+    showRecallNotice(result.message_id, message.conversation_id, result.editable_until)
+  } catch (error) {
+    errorMessage.value = getErrorMessage(error)
+  }
+}
+
+async function reEditMessage(message: ChatMessage) {
+  const messageID = message.recalled_message_id
+  if (!messageID) {
+    return
+  }
+
+  errorMessage.value = ''
+  try {
+    const cache = await getRecallEditCache(messageID)
+    draft.value = cache.content
+  } catch (error) {
+    expireRecallNotice(messageID)
+    errorMessage.value = getErrorMessage(error)
+  }
+}
+
+function showRecallNotice(
+  messageID: string,
+  conversationID: string,
+  editableUntil: string,
+  recalledAt = new Date().toISOString(),
+) {
+  if (conversationID !== activeConversationID.value) {
+    return
+  }
+  const existingNotice = messages.value.find((message) => message.recalled_message_id === messageID)
+  const effectiveEditableUntil = editableUntil || existingNotice?.editable_until || ''
+  const effectiveRecalledAt = recalledAt || existingNotice?.created_at || new Date().toISOString()
+  const recallNotice = createRecallNoticeMessage(messageID, conversationID, effectiveRecalledAt, effectiveEditableUntil)
+
+  messages.value = sortChatMessages([
+    ...messages.value.filter((message) => message.recalled_message_id !== messageID && message.message_id !== messageID),
+    recallNotice,
+  ])
+  persistRecallNotice(messageID, conversationID, effectiveRecalledAt, effectiveEditableUntil)
+}
+
 function updateConversationLastMessage(conversationID: string, content: string) {
   conversations.value = conversations.value.map((item) => {
     if (item.conversation_id !== conversationID) {
@@ -276,6 +415,194 @@ function isFailed(message: ChatMessage) {
   return message.send_status === 'failed' || message.send_status === 'failed_blocked'
 }
 
+function canDelete(message: ChatMessage) {
+  return !message.is_recall_notice && isPersistedMessage(message)
+}
+
+function canRecall(message: ChatMessage) {
+  return !message.is_recall_notice && isMine(message) && message.send_status === 'sent' && isPersistedMessage(message)
+}
+
+function canReEdit(message: ChatMessage) {
+  return Boolean(message.is_recall_notice && message.recalled_message_id && isBeforeEditableUntil(message.editable_until))
+}
+
+function isPersistedMessage(message: ChatMessage) {
+  return /^\d+$/.test(message.message_id)
+}
+
+function createRecallNoticeMessage(
+  messageID: string,
+  conversationID: string,
+  recalledAt: string,
+  editableUntil: string,
+): ChatMessage {
+  return {
+    client_msg_id: `recall-${messageID}`,
+    message_id: `recall-${messageID}`,
+    conversation_id: conversationID,
+    sender_id: auth.user?.user_id || '',
+    message_type: 'system',
+    content: '你撤回了一条消息',
+    extra_json: {},
+    send_status: 'sent',
+    created_at: recalledAt,
+    is_recall_notice: true,
+    recalled_message_id: messageID,
+    editable_until: editableUntil,
+  }
+}
+
+function mergeStoredRecallNotices(conversationID: string) {
+  const notices = loadStoredRecallNotices().filter((notice) => notice.conversation_id === conversationID)
+  if (notices.length === 0) {
+    return
+  }
+
+  const noticeMessages = notices.map((notice) =>
+    createRecallNoticeMessage(notice.message_id, notice.conversation_id, notice.recalled_at, notice.editable_until),
+  )
+  const noticeIDs = new Set(notices.map((notice) => notice.message_id))
+  messages.value = sortChatMessages([
+    ...messages.value.filter(
+      (message) =>
+        !noticeIDs.has(message.message_id) &&
+        (!message.recalled_message_id || !noticeIDs.has(message.recalled_message_id)),
+    ),
+    ...noticeMessages,
+  ])
+}
+
+function persistRecallNotice(messageID: string, conversationID: string, recalledAt: string, editableUntil: string) {
+  const userID = auth.user?.user_id
+  if (!userID || !editableUntil || !isBeforeEditableUntil(editableUntil)) {
+    return
+  }
+
+  const notices = loadStoredRecallNotices().filter((notice) => notice.message_id !== messageID)
+  notices.push({
+    user_id: userID,
+    conversation_id: conversationID,
+    message_id: messageID,
+    recalled_at: recalledAt,
+    editable_until: editableUntil,
+  })
+  saveStoredRecallNotices(notices)
+}
+
+function loadStoredRecallNotices() {
+  const key = recallNoticeStorageKey()
+  const userID = auth.user?.user_id
+  if (!key || !userID) {
+    return []
+  }
+
+  let parsed: StoredRecallNotice[] = []
+  try {
+    const raw = localStorage.getItem(key)
+    parsed = raw ? (JSON.parse(raw) as StoredRecallNotice[]) : []
+  } catch {
+    localStorage.removeItem(key)
+    return []
+  }
+
+  const validNotices = parsed.filter(
+    (notice) =>
+      notice.user_id === userID &&
+      notice.conversation_id &&
+      notice.message_id &&
+      notice.recalled_at &&
+      notice.editable_until &&
+      isBeforeEditableUntil(notice.editable_until),
+  )
+  if (validNotices.length !== parsed.length) {
+    saveStoredRecallNotices(validNotices)
+  }
+  return validNotices
+}
+
+function saveStoredRecallNotices(notices: StoredRecallNotice[]) {
+  const key = recallNoticeStorageKey()
+  if (!key) {
+    return
+  }
+  if (notices.length === 0) {
+    localStorage.removeItem(key)
+    return
+  }
+  localStorage.setItem(key, JSON.stringify(notices))
+}
+
+function removeStoredRecallNotice(messageID: string) {
+  saveStoredRecallNotices(loadStoredRecallNotices().filter((notice) => notice.message_id !== messageID))
+}
+
+function removeStoredRecallNoticesByConversation(conversationID: string) {
+  saveStoredRecallNotices(loadStoredRecallNotices().filter((notice) => notice.conversation_id !== conversationID))
+}
+
+function expireRecallNotice(messageID: string) {
+  removeStoredRecallNotice(messageID)
+  messages.value = messages.value.map((message) => {
+    if (message.recalled_message_id !== messageID) {
+      return message
+    }
+    return {
+      ...message,
+      editable_until: '',
+    }
+  })
+}
+
+function cleanupExpiredRecallNotices() {
+  const notices = loadStoredRecallNotices()
+  const activeNoticeIDs = new Set(notices.map((notice) => notice.message_id))
+  messages.value = messages.value.map((message) => {
+    if (!message.recalled_message_id || activeNoticeIDs.has(message.recalled_message_id)) {
+      return message
+    }
+    return {
+      ...message,
+      editable_until: '',
+    }
+  })
+}
+
+function startRecallNoticeExpiryTimer() {
+  recallNoticeTimer = window.setInterval(() => {
+    recallNoticeNow.value = Date.now()
+    cleanupExpiredRecallNotices()
+  }, 30000)
+}
+
+function sortChatMessages(items: ChatMessage[]) {
+  return [...items].sort((left, right) => parseMessageTime(left) - parseMessageTime(right))
+}
+
+function parseMessageTime(message: ChatMessage) {
+  return parseTimeValue(message.is_recall_notice ? message.created_at : message.created_at)
+}
+
+function isBeforeEditableUntil(value?: string) {
+  const editableUntil = parseTimeValue(value || '')
+  return editableUntil > recallNoticeNow.value
+}
+
+function parseTimeValue(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return 0
+  }
+  const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
+  const parsed = Date.parse(normalized)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function recallNoticeStorageKey() {
+  const userID = auth.user?.user_id
+  return userID ? `${recallNoticeStoragePrefix}${userID}` : ''
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '请求失败'
 }
@@ -308,7 +635,17 @@ function getErrorMessage(error: unknown) {
     <section class="chat-main">
       <header class="chat-header">
         <strong>{{ activeConversation?.title || '聊天窗口' }}</strong>
-        <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
+        <div class="header-actions">
+          <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
+          <button
+            class="clear-button"
+            type="button"
+            :disabled="!activeConversationID || messages.length === 0"
+            @click="clearCurrentConversation"
+          >
+            清空
+          </button>
+        </div>
       </header>
 
       <div class="message-area">
@@ -326,9 +663,13 @@ function getErrorMessage(error: unknown) {
         <article
           v-for="message in messages"
           :key="message.message_id"
-          :class="['message-row', { mine: isMine(message) }]"
+          :class="['message-row', { mine: isMine(message), notice: message.is_recall_notice }]"
         >
-          <div class="bubble-wrap">
+          <div v-if="message.is_recall_notice" class="recall-notice">
+            <span>{{ message.content }}</span>
+            <button v-if="canReEdit(message)" type="button" @click="reEditMessage(message)">重新编辑</button>
+          </div>
+          <div v-else class="bubble-wrap">
             <span
               v-if="isMine(message) && isFailed(message)"
               class="failed-mark"
@@ -339,6 +680,14 @@ function getErrorMessage(error: unknown) {
             <div class="message-bubble">
               <p>{{ message.content }}</p>
               <small>{{ message.send_status === 'sending' ? '发送中' : message.created_at }}</small>
+              <div class="message-actions">
+                <button v-if="canDelete(message)" type="button" @click="deleteVisibleMessage(message)">
+                  删除
+                </button>
+                <button v-if="canRecall(message)" type="button" @click="recallVisibleMessage(message)">
+                  撤回
+                </button>
+              </div>
             </div>
           </div>
         </article>
@@ -361,11 +710,16 @@ function getErrorMessage(error: unknown) {
 .chat-shell {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
-  min-height: calc(100vh - 56px);
+  height: calc(100vh - 56px);
+  height: calc(100dvh - 56px);
+  min-height: 0;
+  overflow: hidden;
   background: #f5f7fb;
 }
 
 .conversation-list {
+  min-height: 0;
+  overflow-y: auto;
   padding: 18px;
   border-right: 1px solid #dde3ee;
   background: #ffffff;
@@ -445,9 +799,10 @@ function getErrorMessage(error: unknown) {
 }
 
 .chat-main {
-  display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) 96px;
+  display: flex;
+  min-height: 0;
   min-width: 0;
+  flex-direction: column;
 }
 
 .chat-header,
@@ -461,10 +816,20 @@ function getErrorMessage(error: unknown) {
 }
 
 .chat-header {
+  flex: 0 0 56px;
   justify-content: space-between;
 }
 
+.header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
 .message-area {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px;
 }
@@ -476,6 +841,10 @@ function getErrorMessage(error: unknown) {
 
 .message-row.mine {
   justify-content: flex-end;
+}
+
+.message-row.notice {
+  justify-content: center;
 }
 
 .bubble-wrap {
@@ -530,7 +899,43 @@ function getErrorMessage(error: unknown) {
   font-weight: 700;
 }
 
+.message-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.message-actions button,
+.recall-notice button,
+.clear-button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #175cd3;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.message-row.mine .message-actions button {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.recall-notice {
+  display: inline-flex;
+  max-width: 90%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #eef2f6;
+  color: #475467;
+  font-size: 13px;
+}
+
 .composer {
+  flex: 0 0 96px;
   border-top: 1px solid #dde3ee;
   border-bottom: 0;
 }
@@ -546,7 +951,8 @@ function getErrorMessage(error: unknown) {
 }
 
 .composer button,
-.load-more {
+.load-more,
+.clear-button {
   min-width: 78px;
   height: 38px;
   border: 0;
@@ -558,9 +964,17 @@ function getErrorMessage(error: unknown) {
 }
 
 .composer button:disabled,
-.load-more:disabled {
+.load-more:disabled,
+.clear-button:disabled {
   background: #98a2b3;
   cursor: not-allowed;
+}
+
+.clear-button {
+  min-width: 64px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .load-more {
@@ -582,6 +996,7 @@ function getErrorMessage(error: unknown) {
 @media (max-width: 720px) {
   .chat-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(150px, 34%) minmax(0, 1fr);
   }
 
   .conversation-list {

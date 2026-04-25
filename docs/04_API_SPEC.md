@@ -509,6 +509,14 @@ DELETE /api/conversations/{conversation_id}/messages
 
 说明：只清空当前用户视角。
 
+实现要求：
+
+```txt
+更新当前用户自己的 conversation_user_states.cleared_at
+同时将当前用户该会话的 unread_count 置为 0
+不影响其他用户视角
+```
+
 ### 6.4 置顶会话
 
 ```txt
@@ -540,7 +548,7 @@ DELETE /api/conversations/{conversation_id}/mute
 ### 7.1 删除单条消息
 
 ```txt
-DELETE /api/messages/{message_id}
+DELETE /api/conversations/{conversation_id}/messages/{message_id}
 ```
 
 只删除当前用户视角。
@@ -548,6 +556,7 @@ DELETE /api/messages/{message_id}
 ```txt
 删除必须只更新当前用户自己的 message_user_states.is_deleted
 当前用户没有 message_user_states 时不能删除该消息
+单条删除必须幂等，重复删除同一条当前用户可访问的消息仍返回成功
 failed_blocked 只有发送方拥有 message_user_states，因此只允许发送方在自己视角删除
 ```
 
@@ -561,9 +570,15 @@ POST /api/messages/{message_id}/recall
 
 ```txt
 只能撤回自己发送的消息
+只有 send_status = sent 的消息可以撤回
+send_status = failed_blocked 的消息不能撤回，只能由发送方删除
 发送后 5 分钟内可撤回
+撤回时必须先读取并缓存原始 content，再清空 messages.content
+Redis 重新编辑缓存写入失败时，撤回操作不能返回成功
 撤回后双方消息消失
+撤回成功后再推送 WebSocket 事件，不能在事务提交前推送
 发送方可重新编辑
+如果被撤回消息是 conversations.last_message_id，需要回退到上一条未撤回、未全局删除、send_status = sent 的消息；没有则置空
 ```
 
 响应：
@@ -582,7 +597,7 @@ POST /api/messages/{message_id}/recall
 ### 7.3 获取撤回消息的重新编辑内容
 
 ```txt
-GET /api/messages/{message_id}/recall-edit
+GET /api/messages/{message_id}/recall-edit-cache
 ```
 
 说明：

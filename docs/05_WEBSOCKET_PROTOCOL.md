@@ -271,7 +271,7 @@ chat.message.receive
 
 ## 8. 撤回消息事件
 
-撤回通过 HTTP API 发起，WebSocket 用于通知相关在线用户移除消息。
+撤回通过 HTTP API 发起，WebSocket 用于通知相关在线用户移除消息。事件必须在撤回事务提交成功后推送，不能在事务提交前推送。
 
 事件类型：
 
@@ -298,6 +298,7 @@ chat.message.recalled
 前端规则：
 
 ```txt
+chat.message.recalled 只用于让前端移除原消息
 接收方：直接移除该消息，不显示任何提示
 发送方：移除该消息，显示“你撤回了一条消息”和“重新编辑”按钮
 ```

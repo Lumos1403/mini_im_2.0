@@ -10,10 +10,11 @@ const (
 	EventPong  = "pong"
 	EventError = "error"
 
-	EventChatMessageSend    = "chat.message.send"
-	EventChatMessageAck     = "chat.message.ack"
-	EventChatMessageReceive = "chat.message.receive"
-	EventChatMessageFailed  = "chat.message.failed"
+	EventChatMessageSend     = "chat.message.send"
+	EventChatMessageAck      = "chat.message.ack"
+	EventChatMessageReceive  = "chat.message.receive"
+	EventChatMessageFailed   = "chat.message.failed"
+	EventChatMessageRecalled = "chat.message.recalled"
 )
 
 type Envelope struct {

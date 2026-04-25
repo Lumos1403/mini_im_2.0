@@ -162,6 +162,66 @@ LIMIT 1
 	return peerID, nil
 }
 
+func (r *ConversationRepository) IsActiveMember(ctx context.Context, conversationID int64, userID int64) (bool, error) {
+	var exists int
+	err := r.db.QueryRowContext(ctx, `
+SELECT 1
+FROM conversations c
+INNER JOIN conversation_members cm
+  ON cm.conversation_id = c.conversation_id
+  AND cm.user_id = ?
+  AND cm.status = ?
+WHERE c.conversation_id = ?
+  AND c.status = ?
+LIMIT 1
+`, userID, model.ConversationMemberStatusActive, conversationID, model.ConversationStatusNormal).Scan(&exists)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func (r *ConversationRepository) ClearMessagesForUser(ctx context.Context, conversationID int64, userID int64, clearedAt sql.NullTime) error {
+	var exists int
+	if err := r.db.QueryRowContext(ctx, `
+SELECT 1
+FROM conversation_user_states cus
+INNER JOIN conversation_members cm
+  ON cm.conversation_id = cus.conversation_id
+  AND cm.user_id = cus.user_id
+  AND cm.status = ?
+INNER JOIN conversations c
+  ON c.conversation_id = cus.conversation_id
+  AND c.status = ?
+WHERE cus.conversation_id = ?
+  AND cus.user_id = ?
+LIMIT 1
+`, model.ConversationMemberStatusActive, model.ConversationStatusNormal, conversationID, userID).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrConversationNotFound
+		}
+		return err
+	}
+
+	_, err := r.db.ExecContext(ctx, `
+UPDATE conversation_user_states cus
+INNER JOIN conversation_members cm
+  ON cm.conversation_id = cus.conversation_id
+  AND cm.user_id = cus.user_id
+  AND cm.status = ?
+INNER JOIN conversations c
+  ON c.conversation_id = cus.conversation_id
+  AND c.status = ?
+SET cus.cleared_at = ?, cus.unread_count = 0, cus.updated_at = CURRENT_TIMESTAMP
+WHERE cus.conversation_id = ?
+  AND cus.user_id = ?
+`, model.ConversationMemberStatusActive, model.ConversationStatusNormal, clearedAt, conversationID, userID)
+	return err
+}
+
 func findPrivateConversationID(ctx context.Context, exec Executor, userID1 int64, userID2 int64) (int64, error) {
 	var conversationID int64
 	err := exec.QueryRowContext(ctx, `

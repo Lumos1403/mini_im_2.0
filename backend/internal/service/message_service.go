@@ -13,6 +13,7 @@ import (
 	apperrors "mini_im/backend/internal/pkg/errors"
 	"mini_im/backend/internal/pkg/snowflake"
 	mysqlrepo "mini_im/backend/internal/repository/mysql"
+	redisrepo "mini_im/backend/internal/repository/redis"
 )
 
 const (
@@ -45,27 +46,45 @@ type MessageService struct {
 	conversationRepo     *mysqlrepo.ConversationRepository
 	friendRepo           *mysqlrepo.FriendRepository
 	messageRepo          *mysqlrepo.MessageRepository
+	messageCacheRepo     *redisrepo.MessageRepository
 	idGenerator          *snowflake.Node
 	textMessageMaxLength int
+	recallWindow         time.Duration
+	recallNotifier       MessageRecallNotifier
+}
+
+type MessageRecallNotifier interface {
+	NotifyMessageRecalled(ctx context.Context, recipientIDs []int64, data MessageRecalledEventOutput) error
 }
 
 func NewMessageService(
 	conversationRepo *mysqlrepo.ConversationRepository,
 	friendRepo *mysqlrepo.FriendRepository,
 	messageRepo *mysqlrepo.MessageRepository,
+	messageCacheRepo *redisrepo.MessageRepository,
 	idGenerator *snowflake.Node,
 	textMessageMaxLength int,
+	recallMinutes int,
 ) *MessageService {
 	if textMessageMaxLength <= 0 {
 		textMessageMaxLength = 2000
+	}
+	if recallMinutes <= 0 {
+		recallMinutes = 5
 	}
 	return &MessageService{
 		conversationRepo:     conversationRepo,
 		friendRepo:           friendRepo,
 		messageRepo:          messageRepo,
+		messageCacheRepo:     messageCacheRepo,
 		idGenerator:          idGenerator,
 		textMessageMaxLength: textMessageMaxLength,
+		recallWindow:         time.Duration(recallMinutes) * time.Minute,
 	}
+}
+
+func (s *MessageService) SetRecallNotifier(notifier MessageRecallNotifier) {
+	s.recallNotifier = notifier
 }
 
 func (s *MessageService) SendTextMessage(ctx context.Context, input SendTextMessageInput) (*SendTextMessageResult, *apperrors.AppError) {
@@ -150,11 +169,12 @@ func (s *MessageService) ListConversationMessages(ctx context.Context, userID in
 	}
 	limit = normalizeCursorLimit(limit)
 
-	if _, err := s.conversationRepo.FindPrivatePeerID(ctx, conversationID, userID); err != nil {
-		if errors.Is(err, mysqlrepo.ErrConversationNotFound) {
-			return nil, apperrors.ErrMessageAccessDenied
-		}
+	isMember, err := s.conversationRepo.IsActiveMember(ctx, conversationID, userID)
+	if err != nil {
 		return nil, apperrors.ErrInternal
+	}
+	if !isMember {
+		return nil, apperrors.ErrMessageAccessDenied
 	}
 
 	messages, err := s.messageRepo.ListVisibleConversationMessages(ctx, userID, conversationID, cursor, limit)
@@ -178,6 +198,124 @@ func (s *MessageService) ListConversationMessages(ctx context.Context, userID in
 		NextCursor: nextCursor,
 		HasMore:    len(outputs) == limit,
 		Limit:      limit,
+	}, nil
+}
+
+func (s *MessageService) DeleteConversationMessage(ctx context.Context, userID int64, conversationIDValue string, messageIDValue string) *apperrors.AppError {
+	conversationID, appErr := parsePositiveID(conversationIDValue)
+	if appErr != nil {
+		return appErr
+	}
+	messageID, appErr := parsePositiveID(messageIDValue)
+	if appErr != nil {
+		return appErr
+	}
+
+	if err := s.messageRepo.DeleteForUser(ctx, userID, conversationID, messageID, now()); err != nil {
+		if errors.Is(err, mysqlrepo.ErrMessageNotFound) {
+			return apperrors.ErrMessageNotFound
+		}
+		return apperrors.ErrInternal
+	}
+	return nil
+}
+
+func (s *MessageService) ClearConversationMessages(ctx context.Context, userID int64, conversationIDValue string) *apperrors.AppError {
+	conversationID, appErr := parsePositiveID(conversationIDValue)
+	if appErr != nil {
+		return appErr
+	}
+
+	if err := s.conversationRepo.ClearMessagesForUser(ctx, conversationID, userID, sql.NullTime{Time: now(), Valid: true}); err != nil {
+		if errors.Is(err, mysqlrepo.ErrConversationNotFound) {
+			return apperrors.ErrMessageAccessDenied
+		}
+		return apperrors.ErrInternal
+	}
+	return nil
+}
+
+func (s *MessageService) RecallMessage(ctx context.Context, userID int64, messageIDValue string) (*RecallMessageOutput, *apperrors.AppError) {
+	messageID, appErr := parsePositiveID(messageIDValue)
+	if appErr != nil {
+		return nil, appErr
+	}
+	if s.messageCacheRepo == nil {
+		return nil, apperrors.ErrInternal
+	}
+
+	recalledAt := now()
+	cacheWritten := false
+	result, err := s.messageRepo.RecallMessage(ctx, mysqlrepo.RecallMessageParams{
+		MessageID:    messageID,
+		UserID:       userID,
+		Now:          recalledAt,
+		RecallWindow: s.recallWindow,
+		CacheOriginalContent: func(content string) error {
+			if err := s.messageCacheRepo.SaveRecallEditCache(ctx, messageID, userID, content, s.recallWindow); err != nil {
+				return err
+			}
+			cacheWritten = true
+			return nil
+		},
+	})
+	if err != nil {
+		if cacheWritten {
+			_ = s.messageCacheRepo.DeleteRecallEditCache(context.Background(), messageID, userID)
+		}
+		return nil, mapMessageRepositoryError(err)
+	}
+
+	event := MessageRecalledEventOutput{
+		MessageID:      formatID(result.MessageID),
+		ConversationID: formatID(result.ConversationID),
+		RecalledBy:     formatID(result.RecalledBy),
+		RecalledAt:     formatTime(result.RecalledAt),
+	}
+	if s.recallNotifier != nil && len(result.RecipientIDs) > 0 {
+		_ = s.recallNotifier.NotifyMessageRecalled(ctx, result.RecipientIDs, event)
+	}
+
+	return &RecallMessageOutput{
+		MessageID:     formatID(result.MessageID),
+		EditableUntil: formatTime(result.EditableUntil),
+	}, nil
+}
+
+func (s *MessageService) GetRecallEditCache(ctx context.Context, userID int64, messageIDValue string) (*RecallEditCacheOutput, *apperrors.AppError) {
+	messageID, appErr := parsePositiveID(messageIDValue)
+	if appErr != nil {
+		return nil, appErr
+	}
+	if s.messageCacheRepo == nil {
+		return nil, apperrors.ErrInternal
+	}
+
+	message, err := s.messageRepo.FindByMessageID(ctx, messageID)
+	if err != nil {
+		if errors.Is(err, mysqlrepo.ErrMessageNotFound) {
+			return nil, apperrors.ErrMessageNotFound
+		}
+		return nil, apperrors.ErrInternal
+	}
+	if message.SenderID != userID {
+		return nil, apperrors.ErrMessageAccessDenied
+	}
+	if !message.RecalledAt.Valid || !message.RecalledBy.Valid || message.RecalledBy.Int64 != userID {
+		return nil, apperrors.ErrMessageNotRecallable
+	}
+
+	content, err := s.messageCacheRepo.GetRecallEditCache(ctx, messageID, userID)
+	if err != nil {
+		if errors.Is(err, redisrepo.ErrRecallEditCacheNotFound) {
+			return nil, apperrors.ErrMessageNotRecallable
+		}
+		return nil, apperrors.ErrInternal
+	}
+
+	return &RecallEditCacheOutput{
+		MessageID: formatID(messageID),
+		Content:   content,
 	}, nil
 }
 
@@ -369,6 +507,21 @@ func normalizeCursorLimit(limit int) int {
 		return 100
 	}
 	return limit
+}
+
+func mapMessageRepositoryError(err error) *apperrors.AppError {
+	switch {
+	case errors.Is(err, mysqlrepo.ErrMessageNotFound):
+		return apperrors.ErrMessageNotFound
+	case errors.Is(err, mysqlrepo.ErrMessageAccessDenied):
+		return apperrors.ErrMessageAccessDenied
+	case errors.Is(err, mysqlrepo.ErrMessageNotRecallable):
+		return apperrors.ErrMessageNotRecallable
+	case errors.Is(err, mysqlrepo.ErrMessageAlreadyRecalled):
+		return apperrors.ErrMessageRecalled
+	default:
+		return apperrors.ErrInternal
+	}
 }
 
 func now() time.Time {

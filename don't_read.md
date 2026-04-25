@@ -355,7 +355,7 @@ Docker 要求：
 
 请先输出实现计划和预计修改文件，等我确认后再写代码。
 
-## 第七轮提示词：单聊文本消息ing
+## 第七轮提示词：单聊文本消息done
 
 你现在只完成 Step 7：单聊文本消息。
 
@@ -409,17 +409,18 @@ WebSocket 事件：
 
 请先输出实现计划、消息流转说明、预计修改文件，等我确认后再写代码。
 
-## 第八轮提示词：消息删除、清空、撤回
+## 第八轮提示词：消息删除、清空、撤回ing
 
 你现在只完成 Step 8：消息删除、清空聊天记录、5 分钟撤回、重新编辑缓存。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“消息删除、清空、撤回”部分
-3. docs/03_DATABASE_DESIGN.md 中 messages、message_user_states、conversation_user_states 表
-4. docs/04_API_SPEC.md 中 messages 相关接口
-5. docs/05_WEBSOCKET_PROTOCOL.md 中撤回相关事件
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“消息删除、清空、撤回”部分
+4. docs/03_DATABASE_DESIGN.md 中 messages、message_user_states、conversation_user_states 表
+5. docs/04_API_SPEC.md 中 messages 相关接口
+6. docs/05_WEBSOCKET_PROTOCOL.md 中撤回相关事件
 
 当前任务目标：
 实现用户对消息的个人删除、会话清空、5 分钟内撤回和重新编辑缓存。

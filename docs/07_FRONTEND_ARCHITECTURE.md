@@ -283,7 +283,7 @@ Access Token 过期后自动调用 refresh
 成功后消息移除
 显示“你撤回了一条消息”提示
 提示中显示“重新编辑”按钮
-点击重新编辑后请求 recall-edit 接口
+点击重新编辑后请求 GET /api/messages/{id}/recall-edit-cache
 把内容填回输入框
 ```
 
