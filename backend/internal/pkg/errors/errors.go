@@ -59,6 +59,15 @@ var (
 	ErrFileAccessDenied      = New(70002, "file access denied")
 	ErrFileTooLarge          = New(70003, "file too large")
 	ErrFileInvalid           = New(70004, "file invalid")
+	ErrGroupNotFound         = New(60001, "group not found")
+	ErrGroupPermissionDenied = New(60002, "group permission denied")
+	ErrGroupJoinPending      = New(60003, "group join request pending")
+	ErrGroupJoinNotFound     = New(60004, "group join request not found")
+	ErrGroupAlreadyMember    = New(60005, "already group member")
+	ErrGroupFull             = New(60006, "group is full")
+	ErrGroupDissolved        = New(60007, "group dissolved")
+	ErrGroupMemberNotFound   = New(60008, "group member not found")
+	ErrGroupMemberMuted      = New(60009, "group member muted")
 )
 
 func HTTPStatus(err *AppError) int {
@@ -105,6 +114,14 @@ func HTTPStatus(err *AppError) int {
 	case 70003:
 		return http.StatusRequestEntityTooLarge
 	case 70004, CodeFile:
+		return http.StatusBadRequest
+	case 60001, 60004, 60008:
+		return http.StatusNotFound
+	case 60002:
+		return http.StatusForbidden
+	case 60003, 60005:
+		return http.StatusConflict
+	case 60006, 60007, 60009, CodeGroup:
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

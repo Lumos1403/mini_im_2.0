@@ -60,6 +60,7 @@ func main() {
 	conversationRepo := mysqlrepo.NewConversationRepository(db)
 	messageRepo := mysqlrepo.NewMessageRepository(db)
 	fileRepo := mysqlrepo.NewFileRepository(db)
+	groupRepo := mysqlrepo.NewGroupRepository(db)
 	tokenRepo := redisrepo.NewTokenRepository(redisClient)
 	onlineRepo := redisrepo.NewOnlineRepository(redisClient)
 	messageCacheRepo := redisrepo.NewMessageRepository(redisClient)
@@ -72,8 +73,9 @@ func main() {
 	userService := service.NewUserService(userRepo)
 	conversationService := service.NewConversationService(conversationRepo)
 	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator, nil)
+	groupService := service.NewGroupService(groupRepo, idGenerator, cfg.IM.GroupMaxMembers)
 	fileService := service.NewFileService(fileRepo, fileStorage, idGenerator, cfg.File.MaxSizeMB)
-	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, fileRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)
+	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, fileRepo, groupRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)
 	onlineService := service.NewOnlineService(onlineRepo, cfg.WebSocket.ServerID, time.Duration(cfg.WebSocket.OnlineTTLSeconds)*time.Second)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
 	wsHub := ws.NewHub(onlineService)
@@ -86,6 +88,7 @@ func main() {
 		AuthHandler:         handler.NewAuthHandler(authService),
 		UserHandler:         handler.NewUserHandler(userService),
 		FriendHandler:       handler.NewFriendHandler(friendService),
+		GroupHandler:        handler.NewGroupHandler(groupService),
 		ConversationHandler: handler.NewConversationHandler(conversationService),
 		MessageHandler:      handler.NewMessageHandler(messageService),
 		FileHandler:         handler.NewFileHandler(fileService),

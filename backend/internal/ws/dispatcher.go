@@ -93,13 +93,22 @@ func (d *SyncMessageDispatcher) Dispatch(ctx context.Context, client *Client, en
 		return client.sendEnvelope(envelope.Seq, EventChatMessageFailed, result.Failed)
 	}
 
-	if result.Receive != nil && result.ReceiverID > 0 && !result.Duplicated {
-		if err := d.sendReceive(dispatchCtx, result.ReceiverID, result.Receive); err != nil {
-			logger.L().Warn("websocket message receive push failed",
-				zap.Int64("sender_id", client.UserID),
-				zap.Int64("receiver_id", result.ReceiverID),
-				zap.Error(err),
-			)
+	if result.Receive != nil && !result.Duplicated {
+		receiverIDs := result.ReceiverIDs
+		if len(receiverIDs) == 0 && result.ReceiverID > 0 {
+			receiverIDs = []int64{result.ReceiverID}
+		}
+		for _, receiverID := range receiverIDs {
+			if receiverID == client.UserID {
+				continue
+			}
+			if err := d.sendReceive(dispatchCtx, receiverID, result.Receive); err != nil {
+				logger.L().Warn("websocket message receive push failed",
+					zap.Int64("sender_id", client.UserID),
+					zap.Int64("receiver_id", receiverID),
+					zap.Error(err),
+				)
+			}
 		}
 	}
 	return client.sendEnvelope(envelope.Seq, EventChatMessageAck, result.Ack)

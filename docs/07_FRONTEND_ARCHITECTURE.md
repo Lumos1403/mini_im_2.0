@@ -386,6 +386,16 @@ MVP 不做预览。
 
 ## 10. 群聊交互
 
+当前 Step 10 最小入口：
+
+```txt
+components/group/GroupPanel.vue
+stores/group.ts
+api/group.ts
+```
+
+本阶段仅提供创建群、搜索群号、申请入群、处理入群申请、基础成员列表、设置管理员、禁言、修改设置、解散群和进入群聊会话的验证入口。不实现完整群成员 GUI、身份 Badge、成员资料弹窗、群内添加好友按钮。
+
 必须支持：
 
 ```txt
@@ -401,6 +411,123 @@ MVP 不做预览。
 ```
 
 权限按钮必须根据当前用户角色显示，但最终权限仍由服务端校验。
+
+### 10.1 群消息身份标识
+
+群聊消息中需要展示发送者昵称和群身份标识。
+
+规则：
+
+```txt
+sender_group_role = owner 时，在昵称旁显示“群主”，金色
+sender_group_role = admin 时，在昵称旁显示“管理员”，绿色
+sender_group_role = member 时，不显示特殊标识
+```
+
+要求：
+
+```txt
+前端必须使用后端返回的 sender_group_role
+不允许根据昵称、头像或本地判断是否群主 / 管理员
+历史消息和实时消息都要支持身份标识
+如果 sender_group_role 缺失，默认按 member 处理，不能导致页面崩溃
+```
+
+建议组件：
+
+```txt
+components/group/GroupRoleBadge.vue
+```
+
+### 10.2 群成员列表
+
+群聊页面需要提供查看群成员入口。
+
+群成员列表展示：
+
+```txt
+头像
+昵称
+user_id
+个性签名 bio
+群角色 role
+禁言状态 mute_until
+好友状态 friendship_status
+```
+
+建议组件：
+
+```txt
+components/group/GroupMemberList.vue
+components/group/GroupMemberDrawer.vue
+```
+
+排序建议：
+
+```txt
+群主 owner 在最上方
+管理员 admin 其次
+普通成员 member 再后
+同角色内按 joined_at 或 nickname 排序
+```
+
+### 10.3 群成员资料弹窗
+
+点击群成员头像或昵称，打开群成员资料弹窗。
+
+展示：
+
+```txt
+头像
+昵称
+user_id
+bio
+role
+friendship_status
+```
+
+按钮规则：
+
+```txt
+self：显示这是你自己，不显示添加好友
+friend：显示已是好友，可显示发消息
+not_friend：显示添加好友
+pending_sent：显示申请中
+pending_received：提示对方已申请添加你
+```
+
+添加好友必须复用：
+
+```txt
+POST /api/friends/requests
+```
+
+建议组件：
+
+```txt
+components/group/GroupMemberProfileModal.vue
+```
+
+### 10.4 群成员状态管理
+
+建议在 `stores/group.ts` 中维护：
+
+```txt
+当前群成员列表
+群成员加载状态
+群成员资料弹窗状态
+当前选中的群成员
+```
+
+前端唯一标识必须使用：
+
+```txt
+user_id
+group_id
+conversation_id
+```
+
+禁止使用 nickname 或 avatar_url 匹配用户或会话。
 
 ## 11. 路由守卫
 

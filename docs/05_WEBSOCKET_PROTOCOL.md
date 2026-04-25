@@ -383,10 +383,82 @@ friend.deleted
 群消息也使用：
 
 ```txt
+chat.message.send
+chat.message.ack
 chat.message.receive
 ```
 
-通过 conversation_id 区分。
+通过 `conversation_id` 区分单聊和群聊。
+
+当 `conversation_type = group` 时，服务端必须走群聊消息逻辑。
+
+客户端发送：
+
+```json
+{
+  "seq": "tmp-group-001",
+  "type": "chat.message.send",
+  "data": {
+    "conversation_id": "group-conversation-id",
+    "client_msg_id": "client-generated-id",
+    "message_type": "text",
+    "content": "大家好",
+    "extra_json": {}
+  },
+  "timestamp": 1710000000000
+}
+```
+
+服务端推送：
+
+```json
+{
+  "seq": "server-999999",
+  "type": "chat.message.receive",
+  "data": {
+    "client_msg_id": "client-generated-id",
+    "message_id": "999999",
+    "conversation_id": "group-conversation-id",
+    "sender_id": "123456789",
+    "sender_nickname": "张三",
+    "sender_avatar_url": "",
+    "sender_group_role": "owner",
+    "message_type": "text",
+    "content": "大家好",
+    "extra_json": {},
+    "send_status": "sent",
+    "created_at": "2026-04-25 12:00:00"
+  },
+  "timestamp": 1710000001000
+}
+```
+
+字段说明：
+
+```txt
+sender_group_role：owner / admin / member
+sender_group_role 必须由服务端根据 group_members.role 查询
+前端不能根据昵称、头像或本地缓存判断群角色
+```
+
+群消息发送校验：
+
+```txt
+用户必须是群成员
+群必须是 normal 状态
+用户不能处于禁言期
+消息类型当前只支持 text
+sender_id 必须来自 WebSocket 鉴权结果
+```
+
+失败情况：
+
+```txt
+非群成员发送：chat.message.failed
+被禁言发送：chat.message.failed，code = group_member_muted
+群已解散发送：chat.message.failed，code = group_dissolved
+发送方发送成功后只收到 chat.message.ack，不额外收到自己的 chat.message.receive
+```
 
 ### 11.2 群成员变更
 

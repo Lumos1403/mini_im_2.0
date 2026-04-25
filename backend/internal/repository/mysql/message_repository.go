@@ -72,6 +72,64 @@ WHERE conversation_id = ?
 	return tx.Commit()
 }
 
+func (r *MessageRepository) CreateGroupMessage(ctx context.Context, message *model.Message, groupID int64) ([]int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	if err := insertMessage(ctx, tx, message); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+SELECT user_id
+FROM group_members
+WHERE group_id = ?
+  AND status = ?
+ORDER BY joined_at ASC
+`, groupID, model.GroupMemberStatusActive)
+	if err != nil {
+		return nil, err
+	}
+
+	memberIDs := make([]int64, 0)
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		memberIDs = append(memberIDs, userID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	for _, userID := range memberIDs {
+		if err := insertMessageUserState(ctx, tx, message.MessageID, userID); err != nil {
+			return nil, err
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE conversations
+SET last_message_id = ?, last_message_at = ?
+WHERE conversation_id = ?
+  AND (last_message_id IS NULL OR last_message_id < ?)
+`, message.MessageID, message.CreatedAt, message.ConversationID, message.MessageID); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return memberIDs, nil
+}
+
 func (r *MessageRepository) CreateBlockedPrivateMessage(ctx context.Context, message *model.Message) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

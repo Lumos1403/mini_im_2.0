@@ -760,12 +760,11 @@ POST /api/groups
 ```json
 {
   "name": "测试群",
-  "avatar_url": "",
-  "member_ids": ["123", "456"]
+  "avatar_url": ""
 }
 ```
 
-响应包含 group_id、group_no、conversation_id。
+响应包含 group_id、group_no、conversation_id。本阶段 `member_ids` 不处理初始成员加入，创建者自动成为群主。
 
 ### 10.2 搜索群
 
@@ -773,7 +772,7 @@ POST /api/groups
 GET /api/groups/search?keyword=10001
 ```
 
-优先按 group_no 精确搜索。
+优先按 group_no 精确搜索。响应项包含 `group_id`、`group_no`、`conversation_id`、`name`、`avatar_url`、`max_members`、`allow_member_invite`、`status`、`is_member`。
 
 ### 10.3 申请加入群
 
@@ -803,8 +802,55 @@ POST /api/groups/join-requests/{request_id}/reject
 
 ### 10.7 获取群成员
 
+### 10.7 获取群成员
+
 ```txt
 GET /api/groups/{group_id}/members
+```
+
+需要登录，且当前用户必须是该群成员。
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "user_id": "123456789",
+        "nickname": "张三",
+        "avatar_url": "",
+        "bio": "个性签名",
+        "role": "owner",
+        "mute_until": null,
+        "joined_at": "2026-04-25 12:00:00",
+        "status": "active",
+        "friendship_status": "self"
+      }
+    ],
+    "total": 1
+  }
+}
+```
+
+字段说明：
+
+```txt
+role：owner / admin / member
+friendship_status：self / friend / not_friend / pending_sent / pending_received
+mute_until：为空表示未禁言；不为空且晚于当前时间表示禁言中
+```
+
+说明：
+
+```txt
+self：当前登录用户自己
+friend：已经是好友
+not_friend：不是好友，可以发起好友申请
+pending_sent：我已经向对方发过好友申请
+pending_received：对方已经向我发过好友申请
 ```
 
 ### 10.8 设置管理员
@@ -858,6 +904,14 @@ PUT /api/groups/{group_id}/settings
 }
 ```
 
+规则：
+
+```txt
+max_members 只能由群主修改，不能小于当前成员数，不能超过服务端配置上限。
+allow_member_invite 可由群主或管理员修改。
+两个字段都支持按需传入。
+```
+
 ### 10.13 解散群聊
 
 ```txt
@@ -865,3 +919,51 @@ DELETE /api/groups/{group_id}
 ```
 
 仅群主。
+
+### 10.14 群消息历史字段补充
+
+获取会话消息接口 `GET /api/conversations/{conversation_id}/messages` 在 conversation_type = group 时，消息项需要额外返回：
+
+```json
+{
+  "message_id": "999999",
+  "conversation_id": "111111",
+  "sender_id": "123456789",
+  "sender_nickname": "张三",
+  "sender_avatar_url": "",
+  "sender_group_role": "owner",
+  "message_type": "text",
+  "content": "大家好",
+  "send_status": "sent",
+  "created_at": "2026-04-25 12:00:00"
+}
+```
+
+说明：
+
+```txt
+sender_group_role 必须来自 group_members.role
+owner 用于前端展示群主标识
+admin 用于前端展示管理员标识
+member 不展示特殊标识
+群消息实时推送和历史消息均返回 sender_nickname、sender_avatar_url、sender_group_role。
+```
+
+### 10.15 群内添加好友
+
+群成员资料弹窗中的添加好友功能必须复用已有好友申请接口：
+
+```txt
+POST /api/friends/requests
+```
+
+请求：
+
+```json
+{
+  "to_user_id": "123456789",
+  "message": "我是群里的成员"
+}
+```
+
+不新增单独的群内添加好友接口。

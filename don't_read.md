@@ -460,7 +460,7 @@ WebSocket 事件：
 
 请先输出实现计划、数据状态变化说明、预计修改文件，等我确认后再写代码。
 
-## 第九轮提示词：文件消息ing
+## 第九轮提示词：文件消息done
 
 你现在只完成 Step 9：文件上传、文件下载鉴权、文件消息。
 
@@ -512,65 +512,350 @@ WebSocket 要求：
 
 请先输出实现计划、文件鉴权方案、预计修改文件，等我确认后再写代码。
 
-## 第十轮提示词：群聊
+## Step 10：群聊基础功能
+
+请不要依赖聊天历史。本轮是一个新的独立开发任务。
 
 你现在只完成 Step 10：群聊基础功能。
 
 请先阅读：
 
-1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“群聊系统”部分
-3. docs/03_DATABASE_DESIGN.md 中 groups、group_members、group_join_requests 表
-4. docs/04_API_SPEC.md 中 groups 相关接口
-5. docs/05_WEBSOCKET_PROTOCOL.md 中群消息事件
+1. `AGENTS.md`
+2. `START_HERE.md`
+3. `docs/01_PROJECT_DEVELOPMENT_SPEC.md` 中“群聊系统”部分
+4. `docs/03_DATABASE_DESIGN.md` 中 `groups`、`group_members`、`group_join_requests` 表
+5. `docs/04_API_SPEC.md` 中群聊接口部分
+6. `docs/05_WEBSOCKET_PROTOCOL.md` 中群消息事件部分
+7. `docs/06_BACKEND_ARCHITECTURE.md` 中 group / message / ws 模块职责
+8. `docs/08_SECURITY_AND_CONCURRENCY.md` 中群权限和消息权限相关内容
+9. `docs/10_DEVELOPMENT_TASKS.md` 中 Step 10：群聊基础功能
+10. `docs/11_TESTING_ACCEPTANCE.md` 中群聊验收标准
 
 当前任务目标：
-实现创建群聊、群号搜索、申请入群、审批入群、群成员管理、群消息、禁言、解散群聊。
 
-功能要求：
+实现 Step 10 群聊基础功能，打通群聊主链路，包括：
 
-1. 用户可以创建群聊。
-2. 创建者自动成为群主 owner。
-3. 群默认最大人数 50，可配置。
-4. 系统生成 group_id 和 group_no。
-5. 用户可以通过群号搜索群聊。
-6. 用户可以申请加入群聊。
-7. 群主或管理员可以同意/拒绝入群申请。
-8. 群角色：
-   - owner
-   - admin
-   - member
-9. 群主可以设置管理员。
-10. 群主和管理员可以设置成员禁言。
-11. 群主和管理员可以设置是否允许普通成员邀请。
-12. 群主可以解散群聊。
-13. 被禁言用户不能发送群消息。
-14. 群消息复用 messages 表和 conversations 表。
+1. 创建群聊。
+2. 群号搜索。
+3. 申请入群。
+4. 群主或管理员审批入群。
+5. 群成员管理。
+6. 设置管理员和取消管理员。
+7. 群成员禁言和解除禁言。
+8. 修改群设置。
+9. 群主解散群聊。
+10. 群 text 消息发送、入库、实时推送和历史分页。
 
-接口要求：
+本轮重点是群聊基础能力和最小前端验证入口，不实现完整群成员 GUI，不实现群主 / 管理员 Badge，不实现群成员资料弹窗和群内添加好友按钮，这些放到 Step 10.5。
 
-1. POST /api/groups
-2. GET /api/groups/search
-3. POST /api/groups/{group_id}/join-requests
-4. GET /api/groups/{group_id}/join-requests
-5. POST /api/groups/join-requests/{id}/accept
-6. POST /api/groups/join-requests/{id}/reject
-7. GET /api/groups/{group_id}/members
-8. POST /api/groups/{group_id}/admins
-9. DELETE /api/groups/{group_id}/admins/{user_id}
-10. POST /api/groups/{group_id}/mute
-11. PUT /api/groups/{group_id}/settings
-12. DELETE /api/groups/{group_id}
+### 功能边界
 
-严格限制：
+本轮必须实现：
+
+```txt
+POST /api/groups
+GET /api/groups/search
+POST /api/groups/{group_id}/join-requests
+GET /api/groups/{group_id}/join-requests
+POST /api/groups/join-requests/{request_id}/accept
+POST /api/groups/join-requests/{request_id}/reject
+GET /api/groups/{group_id}/members
+POST /api/groups/{group_id}/admins/{user_id}
+DELETE /api/groups/{group_id}/admins/{user_id}
+POST /api/groups/{group_id}/members/{user_id}/mute
+DELETE /api/groups/{group_id}/members/{user_id}/mute
+PUT /api/groups/{group_id}/settings
+DELETE /api/groups/{group_id}
+```
+
+群消息必须复用现有：
+
+```txt
+chat.message.send
+chat.message.ack
+chat.message.receive
+GET /api/conversations/{conversation_id}/messages
+```
+
+群消息发送时必须服务端校验：
+
+```txt
+当前用户是群成员
+群未解散
+当前用户未被禁言
+message_type = text
+sender_id 来自 WebSocket 鉴权上下文
+```
+
+### 数据库要求
+
+请根据 `docs/03_DATABASE_DESIGN.md` 检查是否已有：
+
+```txt
+groups
+group_members
+group_join_requests
+```
+
+如果 migration 已存在，优先复用。
+
+如果缺失字段或索引，先说明需要新增 migration，并列出原因和字段，再实现。
+
+不要随意改动已有消息、单聊、文件相关表结构。
+
+### 后端要求
+
+1. 后端遵守 handler / service / repository 分层。
+2. 群权限必须在 service 层校验。
+3. 群主、管理员、普通成员权限必须严格按照文档实现。
+4. 同意入群申请必须使用事务。
+5. 创建群聊必须同时创建 group、group_members、conversation、conversation_members、conversation_user_states。
+6. 群消息不得破坏现有单聊消息逻辑。
+7. 群消息发送失败必须返回明确 `chat.message.failed`。
+8. 群消息推送字段必须满足 `docs/05_WEBSOCKET_PROTOCOL.md`。
+9. 群成员列表字段必须满足 `docs/04_API_SPEC.md`，为 Step 10.5 做准备。
+
+### 前端最小要求
+
+本轮只做最小可测试入口：
+
+1. 可以创建群聊。
+2. 可以搜索群号。
+3. 可以申请入群。
+4. 群主或管理员可以处理入群申请。
+5. 可以进入群聊会话。
+6. 可以发送群 text 消息。
+7. 被禁言时发送失败并显示错误。
+8. 群解散后不能继续发送。
+9. 可以查看基础群成员列表。
+
+完整群成员 GUI、身份 Badge、成员资料弹窗、群内添加好友放到 Step 10.5。
+
+### 严格限制
 
 1. 不要实现复杂群公告。
 2. 不要实现群文件空间。
 3. 不要实现语音通话。
-4. 群权限必须服务端校验，不能只靠前端隐藏按钮。
-5. 不要破坏单聊消息逻辑。
+4. 不要实现复杂邀请流程。
+5. 不要重写好友系统。
+6. 不要重写单聊消息逻辑。
+7. 不要破坏文件消息、撤回、删除、清空逻辑。
+8. 不要只靠前端隐藏按钮做权限控制。
+9. 不要用 nickname 或 avatar 判断用户身份。
+10. 不要引入 Kafka、Elasticsearch、微服务、Kubernetes。
+11. 不要开发 Step 10.5 的完整 GUI 能力。
 
-请先输出实现计划、群权限校验方案、预计修改文件，等我确认后再写代码。
+### 文档要求
+
+如果本轮修改了接口、字段、WebSocket 事件或前端结构，必须同步更新：
+
+```txt
+docs/03_DATABASE_DESIGN.md
+docs/04_API_SPEC.md
+docs/05_WEBSOCKET_PROTOCOL.md
+docs/07_FRONTEND_ARCHITECTURE.md
+docs/10_DEVELOPMENT_TASKS.md
+docs/11_TESTING_ACCEPTANCE.md
+```
+
+只更新实际发生变化的文档。
+
+### 现在请先输出
+
+在写代码前，请先输出：
+
+1. 你理解的本轮任务目标。
+2. 你准备阅读的文件。
+3. 群聊数据模型和现有 migration 检查计划。
+4. 群权限校验方案。
+5. 群消息如何复用现有 message / conversation / ws 逻辑。
+6. 预计新增或修改的文件。
+7. 是否需要新增 migration。
+8. 是否需要修改 API 文档或 WebSocket 文档。
+9. 需要我确认的问题。
+
+在我确认前，不要直接写代码。
+
+## Step 10.5：群聊成员 GUI 和身份标识
+
+请不要依赖聊天历史。本轮是一个新的独立开发任务。
+
+你现在只完成 Step 10.5：群聊成员 GUI 和身份标识。
+
+请先阅读：
+
+1. `AGENTS.md`
+2. `START_HERE.md`
+3. `docs/01_PROJECT_DEVELOPMENT_SPEC.md` 中“群聊系统”部分
+4. `docs/04_API_SPEC.md` 中群成员、群消息、好友申请相关接口
+5. `docs/05_WEBSOCKET_PROTOCOL.md` 中群消息事件字段
+6. `docs/07_FRONTEND_ARCHITECTURE.md` 中群聊交互、群成员 GUI、群身份标识部分
+7. `docs/10_DEVELOPMENT_TASKS.md` 中 Step 10.5：群聊成员 GUI 和身份标识
+8. `docs/11_TESTING_ACCEPTANCE.md` 中群成员 GUI 和身份标识验收
+9. Step 10 已实现的群聊相关代码
+10. 当前前端 chat store、conversation store、ws store、group store、Chat.vue 和群聊相关组件
+
+当前任务目标：
+
+在 Step 10 群聊基础能力已经完成的前提下，补齐群聊前端体验：
+
+1. 群聊消息中显示群主 / 管理员身份标识。
+2. 支持查看群成员列表。
+3. 支持点击群成员查看资料。
+4. 支持从群成员资料弹窗中添加好友。
+5. 群内成员相关操作根据角色和好友状态显示正确按钮。
+
+本阶段重点是前端 GUI 和响应字段接入，不重写 Step 10 群聊后端主链路。
+
+### 功能要求
+
+本轮必须实现：
+
+```txt
+群主 owner 消息昵称旁显示金色“群主”
+管理员 admin 消息昵称旁显示绿色“管理员”
+普通成员 member 不显示特殊标识
+历史群消息和实时群消息都支持身份标识
+群聊页面提供查看群成员入口
+群成员列表展示头像、昵称、user_id、bio、role、mute_until、friendship_status
+点击群成员头像或昵称打开资料弹窗
+资料弹窗中可以对非好友成员发起好友申请
+群内添加好友复用现有 POST /api/friends/requests
+```
+
+按钮状态必须遵守：
+
+```txt
+self：不显示添加好友
+friend：显示已是好友或发消息
+not_friend：显示添加好友
+pending_sent：显示申请中
+pending_received：提示对方已申请添加你
+```
+
+### 前端结构要求
+
+1. 所有 HTTP 请求必须放在 `src/api`。
+2. 群成员状态可以放在 `stores/group.ts` 或现有 chat store 中，但不能散落在页面组件里。
+3. 建议新增组件：
+   - `GroupRoleBadge`
+   - `GroupMemberList`
+   - `GroupMemberDrawer` 或 `GroupMemberModal`
+   - `GroupMemberProfileModal`
+4. `Chat.vue` 只负责组合组件，不要堆积大量业务逻辑。
+5. WebSocket 群消息接收逻辑应复用现有消息处理流程。
+6. 不要在多个页面重复写群消息解析逻辑。
+7. 必须使用 `user_id`、`group_id`、`conversation_id` 做唯一标识。
+8. 不允许使用 nickname 或 avatar_url 匹配用户或会话。
+
+### 后端字段补齐要求
+
+如果 Step 10 已经返回所需字段，本轮不需要改后端。
+
+如果发现字段不足，可以只做 DTO / 查询补齐，不改核心群聊业务逻辑。
+
+可能需要确认的字段：
+
+```txt
+GET /api/groups/{group_id}/members:
+- user_id
+- nickname
+- avatar_url
+- bio
+- role
+- mute_until
+- joined_at
+- status
+- friendship_status
+
+群消息历史:
+- sender_nickname
+- sender_avatar_url
+- sender_group_role
+
+chat.message.receive:
+- sender_nickname
+- sender_avatar_url
+- sender_group_role
+```
+
+如果补充 API 响应字段，必须更新 `docs/04_API_SPEC.md`。
+
+如果补充 WebSocket 字段，必须更新 `docs/05_WEBSOCKET_PROTOCOL.md`。
+
+不允许新增 migration，除非发现现有数据库确实缺必要字段；如果需要 migration，必须先说明原因。
+
+### 好友接口复用要求
+
+群内添加好友必须复用现有好友申请接口：
+
+```txt
+POST /api/friends/requests
+```
+
+要求：
+
+1. 不新增重复好友接口。
+2. 不直接在前端修改好友关系。
+3. 不允许前端伪造好友状态。
+4. 添加好友成功后，可以刷新群成员列表或局部更新 `friendship_status`。
+5. 如果后端返回已经是好友或已有待处理申请，前端必须正确展示状态。
+
+### 严格限制
+
+1. 不要重新实现 Step 10 群聊后端主链路。
+2. 不要重写单聊消息逻辑。
+3. 不要重写好友系统。
+4. 不要实现复杂群公告。
+5. 不要实现群文件空间。
+6. 不要实现语音通话。
+7. 不要引入新的大型 UI 框架。
+8. 不要用昵称判断身份。
+9. 不要用头像匹配用户。
+10. 不要通过前端隐藏按钮代替服务端权限校验。
+11. 不要修改数据库，除非先说明原因。
+12. 不要破坏现有单聊、文件消息、撤回、删除、清空功能。
+
+### 文档要求
+
+如果本轮新增或修改了响应字段，需要更新：
+
+```txt
+docs/04_API_SPEC.md
+docs/05_WEBSOCKET_PROTOCOL.md
+```
+
+如果新增了前端组件、store、页面结构，需要更新：
+
+```txt
+docs/07_FRONTEND_ARCHITECTURE.md
+```
+
+如果任务状态或拆分有变化，需要更新：
+
+```txt
+docs/10_DEVELOPMENT_TASKS.md
+docs/11_TESTING_ACCEPTANCE.md
+```
+
+只更新实际发生变化的文档。
+
+### 现在请先输出
+
+在写代码前，请先输出：
+
+1. 你理解的本轮任务目标。
+2. 你准备阅读的文件。
+3. 当前 Step 10 已实现字段是否满足 Step 10.5。
+4. 是否需要补充后端 DTO 或接口响应字段。
+5. 前端组件拆分方案。
+6. 群成员列表和资料弹窗状态管理方案。
+7. 群内添加好友如何复用现有好友接口。
+8. 预计新增或修改的文件。
+9. 是否需要修改 API 文档或 WebSocket 文档。
+10. 需要我确认的问题。
+
+在我确认前，不要直接写代码。
 
 ## 第十一轮提示词：搜索功能
 

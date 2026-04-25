@@ -121,6 +121,9 @@ type ConversationOutput struct {
 	PeerUserID       string                         `json:"peer_user_id"`
 	PeerNickname     string                         `json:"peer_nickname"`
 	PeerAvatarURL    string                         `json:"peer_avatar_url"`
+	GroupID          string                         `json:"group_id"`
+	GroupNo          string                         `json:"group_no"`
+	GroupStatus      string                         `json:"group_status"`
 	LastMessage      *ConversationLastMessageOutput `json:"last_message"`
 	UnreadCount      int                            `json:"unread_count"`
 	IsPinned         bool                           `json:"is_pinned"`
@@ -152,27 +155,33 @@ type SendMessageFailedOutput struct {
 }
 
 type MessageReceiveOutput struct {
-	ClientMsgID    string          `json:"client_msg_id"`
-	MessageID      string          `json:"message_id"`
-	ConversationID string          `json:"conversation_id"`
-	SenderID       string          `json:"sender_id"`
-	MessageType    string          `json:"message_type"`
-	Content        string          `json:"content"`
-	ExtraJSON      json.RawMessage `json:"extra_json"`
-	SendStatus     string          `json:"send_status"`
-	CreatedAt      string          `json:"created_at"`
+	ClientMsgID     string          `json:"client_msg_id"`
+	MessageID       string          `json:"message_id"`
+	ConversationID  string          `json:"conversation_id"`
+	SenderID        string          `json:"sender_id"`
+	SenderNickname  string          `json:"sender_nickname"`
+	SenderAvatarURL string          `json:"sender_avatar_url"`
+	SenderGroupRole string          `json:"sender_group_role"`
+	MessageType     string          `json:"message_type"`
+	Content         string          `json:"content"`
+	ExtraJSON       json.RawMessage `json:"extra_json"`
+	SendStatus      string          `json:"send_status"`
+	CreatedAt       string          `json:"created_at"`
 }
 
 type MessageOutput struct {
-	ClientMsgID    string          `json:"client_msg_id"`
-	MessageID      string          `json:"message_id"`
-	ConversationID string          `json:"conversation_id"`
-	SenderID       string          `json:"sender_id"`
-	MessageType    string          `json:"message_type"`
-	Content        string          `json:"content"`
-	ExtraJSON      json.RawMessage `json:"extra_json"`
-	SendStatus     string          `json:"send_status"`
-	CreatedAt      string          `json:"created_at"`
+	ClientMsgID     string          `json:"client_msg_id"`
+	MessageID       string          `json:"message_id"`
+	ConversationID  string          `json:"conversation_id"`
+	SenderID        string          `json:"sender_id"`
+	SenderNickname  string          `json:"sender_nickname"`
+	SenderAvatarURL string          `json:"sender_avatar_url"`
+	SenderGroupRole string          `json:"sender_group_role"`
+	MessageType     string          `json:"message_type"`
+	Content         string          `json:"content"`
+	ExtraJSON       json.RawMessage `json:"extra_json"`
+	SendStatus      string          `json:"send_status"`
+	CreatedAt       string          `json:"created_at"`
 }
 
 type MessagePageOutput struct {
@@ -204,4 +213,79 @@ type FileUploadOutput struct {
 	OriginalName string `json:"original_name"`
 	FileSize     int64  `json:"file_size"`
 	MimeType     string `json:"mime_type"`
+}
+
+type CreateGroupInput struct {
+	Name      string   `json:"name"`
+	AvatarURL string   `json:"avatar_url"`
+	MemberIDs []string `json:"member_ids"`
+}
+
+type GroupOutput struct {
+	GroupID           string `json:"group_id"`
+	GroupNo           string `json:"group_no"`
+	ConversationID    string `json:"conversation_id"`
+	OwnerID           string `json:"owner_id"`
+	Name              string `json:"name"`
+	AvatarURL         string `json:"avatar_url"`
+	MaxMembers        int    `json:"max_members"`
+	AllowMemberInvite bool   `json:"allow_member_invite"`
+	Status            string `json:"status"`
+	IsMember          bool   `json:"is_member,omitempty"`
+}
+
+type CreateGroupOutput struct {
+	GroupID        string `json:"group_id"`
+	GroupNo        string `json:"group_no"`
+	ConversationID string `json:"conversation_id"`
+}
+
+type CreateGroupJoinRequestInput struct {
+	Message string `json:"message"`
+}
+
+type CreateGroupJoinRequestOutput struct {
+	RequestID string `json:"request_id"`
+	Status    string `json:"status"`
+}
+
+type GroupJoinRequestOutput struct {
+	RequestID string     `json:"request_id"`
+	GroupID   string     `json:"group_id"`
+	UserID    string     `json:"user_id"`
+	User      UserOutput `json:"user"`
+	Message   string     `json:"message"`
+	Status    string     `json:"status"`
+	HandledBy string     `json:"handled_by"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
+type HandleGroupJoinRequestOutput struct {
+	RequestID      string `json:"request_id"`
+	GroupID        string `json:"group_id"`
+	ConversationID string `json:"conversation_id"`
+	UserID         string `json:"user_id"`
+	Status         string `json:"status"`
+}
+
+type GroupMemberOutput struct {
+	UserID           string  `json:"user_id"`
+	Nickname         string  `json:"nickname"`
+	AvatarURL        string  `json:"avatar_url"`
+	Bio              string  `json:"bio"`
+	Role             string  `json:"role"`
+	MuteUntil        *string `json:"mute_until"`
+	JoinedAt         string  `json:"joined_at"`
+	Status           string  `json:"status"`
+	FriendshipStatus string  `json:"friendship_status"`
+}
+
+type MuteGroupMemberInput struct {
+	MuteUntil string `json:"mute_until"`
+}
+
+type UpdateGroupSettingsInput struct {
+	AllowMemberInvite *bool `json:"allow_member_invite"`
+	MaxMembers        *int  `json:"max_members"`
 }

@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { FriendItem } from '../api/friend'
 import FriendPanel from '../components/friend/FriendPanel.vue'
+import GroupPanel from '../components/group/GroupPanel.vue'
 import { useChatStore } from '../stores/chat'
 import { useWsStore } from '../stores/ws'
 
@@ -29,7 +30,13 @@ const messageArea = ref<HTMLElement | null>(null)
 
 const activeConversation = computed(() => chat.activeConversation)
 const canSend = computed(() => wsConnected.value && Boolean(activeConversationID.value) && draft.value.trim().length > 0)
-const canUploadFile = computed(() => wsConnected.value && Boolean(activeConversationID.value) && !uploadingFile.value)
+const canUploadFile = computed(
+  () =>
+    wsConnected.value &&
+    Boolean(activeConversationID.value) &&
+    activeConversation.value?.conversation_type !== 'group' &&
+    !uploadingFile.value,
+)
 
 onMounted(async () => {
   await chat.initialize()
@@ -96,6 +103,10 @@ async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
 
 function openFriendChat(friend: FriendItem) {
   void chat.openFriendChat(friend)
+}
+
+function openConversation(conversationID: string) {
+  void chat.selectConversation(conversationID)
 }
 </script>
 
@@ -174,6 +185,12 @@ function openFriendChat(friend: FriendItem) {
               !
             </span>
             <div class="message-bubble">
+              <span
+                v-if="activeConversation?.conversation_type === 'group' && !chat.isMine(message)"
+                class="sender-line"
+              >
+                {{ message.sender_nickname || message.sender_id }}
+              </span>
               <div v-if="message.message_type === 'file'" class="file-card">
                 <span class="file-icon">文件</span>
                 <span class="file-info">
@@ -224,7 +241,10 @@ function openFriendChat(friend: FriendItem) {
       </footer>
     </section>
 
-    <FriendPanel @open-chat="openFriendChat" />
+    <aside class="side-panel">
+      <FriendPanel @open-chat="openFriendChat" />
+      <GroupPanel @open-conversation="openConversation" />
+    </aside>
   </section>
 </template>
 
@@ -237,6 +257,15 @@ function openFriendChat(friend: FriendItem) {
   min-height: 0;
   overflow: hidden;
   background: #f5f7fb;
+}
+
+.side-panel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  border-left: 1px solid #dde3ee;
+  background: #ffffff;
 }
 
 .conversation-list {
@@ -424,6 +453,14 @@ function openFriendChat(friend: FriendItem) {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.sender-line {
+  display: block;
+  margin-bottom: 5px;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .message-bubble small {
@@ -634,12 +671,17 @@ function openFriendChat(friend: FriendItem) {
 @media (max-width: 720px) {
   .chat-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(150px, 24%) minmax(320px, 1fr) minmax(260px, 38%);
+    grid-template-rows: minmax(150px, 22%) minmax(320px, 1fr) minmax(320px, 42%);
   }
 
   .conversation-list {
     border-right: 0;
     border-bottom: 1px solid #dde3ee;
+  }
+
+  .side-panel {
+    border-left: 0;
+    border-top: 1px solid #dde3ee;
   }
 
   .bubble-wrap {

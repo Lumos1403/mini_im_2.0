@@ -15,6 +15,9 @@ export interface Conversation {
   peer_user_id: string
   peer_nickname: string
   peer_avatar_url: string
+  group_id: string
+  group_no: string
+  group_status: string
   last_message: {
     content: string
     message_type: string
@@ -39,6 +42,9 @@ export interface Message {
   message_id: string
   conversation_id: string
   sender_id: string
+  sender_nickname?: string
+  sender_avatar_url?: string
+  sender_group_role?: 'owner' | 'admin' | 'member'
   message_type: MessageType
   content: string
   extra_json: Record<string, unknown>

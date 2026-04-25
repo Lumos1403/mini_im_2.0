@@ -11,6 +11,8 @@ const (
 
 	ConversationStatusNormal = "normal"
 
+	ConversationMemberRoleOwner  = "owner"
+	ConversationMemberRoleAdmin  = "admin"
 	ConversationMemberRoleMember = "member"
 
 	ConversationMemberStatusActive = "active"
@@ -64,4 +66,9 @@ type ConversationListItem struct {
 	IsMuted          bool
 	UpdatedAt        time.Time
 	Peer             UserWithProfile
+	GroupID          sql.NullInt64
+	GroupNo          sql.NullString
+	GroupName        sql.NullString
+	GroupAvatarURL   sql.NullString
+	GroupStatus      sql.NullString
 }

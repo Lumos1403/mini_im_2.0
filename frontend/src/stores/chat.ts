@@ -547,6 +547,9 @@ export const useChatStore = defineStore('chat', {
       if (!conversation) {
         return false
       }
+      if (conversation.conversation_type === 'group') {
+        return Boolean(conversation.group_id && conversation.title)
+      }
       return Boolean(conversation.peer_user_id && conversation.peer_nickname)
     },
 
@@ -869,6 +872,9 @@ function createLocalConversationFromMessage(message: ChatMessage, userID: string
     peer_user_id: peerUserID,
     peer_nickname: '',
     peer_avatar_url: '',
+    group_id: '',
+    group_no: '',
+    group_status: '',
     last_message: null,
     unread_count: 0,
     is_pinned: false,

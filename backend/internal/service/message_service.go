@@ -24,6 +24,9 @@ const (
 	wsFailureDuplicateClientMsgIDConflict = "duplicate_client_msg_id_conflict"
 	wsFailureFileNotFound                 = "file_not_found"
 	wsFailureFileAccessDenied             = "file_access_denied"
+	wsFailureGroupNotMember               = "group_not_member"
+	wsFailureGroupMemberMuted             = "group_member_muted"
+	wsFailureGroupDissolved               = "group_dissolved"
 	wsFailureInternal                     = "internal_error"
 )
 
@@ -45,11 +48,12 @@ type normalizedMessagePayload struct {
 }
 
 type SendMessageResult struct {
-	Ack        *SendMessageAckOutput
-	Failed     *SendMessageFailedOutput
-	Receive    *MessageReceiveOutput
-	ReceiverID int64
-	Duplicated bool
+	Ack         *SendMessageAckOutput
+	Failed      *SendMessageFailedOutput
+	Receive     *MessageReceiveOutput
+	ReceiverID  int64
+	ReceiverIDs []int64
+	Duplicated  bool
 }
 
 type MessageService struct {
@@ -57,6 +61,7 @@ type MessageService struct {
 	friendRepo           *mysqlrepo.FriendRepository
 	messageRepo          *mysqlrepo.MessageRepository
 	fileRepo             *mysqlrepo.FileRepository
+	groupRepo            *mysqlrepo.GroupRepository
 	messageCacheRepo     *redisrepo.MessageRepository
 	idGenerator          *snowflake.Node
 	textMessageMaxLength int
@@ -73,6 +78,7 @@ func NewMessageService(
 	friendRepo *mysqlrepo.FriendRepository,
 	messageRepo *mysqlrepo.MessageRepository,
 	fileRepo *mysqlrepo.FileRepository,
+	groupRepo *mysqlrepo.GroupRepository,
 	messageCacheRepo *redisrepo.MessageRepository,
 	idGenerator *snowflake.Node,
 	textMessageMaxLength int,
@@ -89,6 +95,7 @@ func NewMessageService(
 		friendRepo:           friendRepo,
 		messageRepo:          messageRepo,
 		fileRepo:             fileRepo,
+		groupRepo:            groupRepo,
 		messageCacheRepo:     messageCacheRepo,
 		idGenerator:          idGenerator,
 		textMessageMaxLength: textMessageMaxLength,
@@ -109,6 +116,24 @@ func (s *MessageService) SendMessage(ctx context.Context, input SendMessageInput
 		return &SendMessageResult{Failed: failedMessage(input.ClientMsgID, input.ConversationID, model.MessageSendStatusFailed, sendValidationFailureCode(appErr), appErr.Message)}, nil
 	}
 
+	conversation, err := s.conversationRepo.FindByConversationID(ctx, payload.ConversationID)
+	if err != nil {
+		if errors.Is(err, mysqlrepo.ErrConversationNotFound) {
+			return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureConversationNotFound, "conversation not found")}, nil
+		}
+		return nil, apperrors.ErrInternal
+	}
+	if conversation.ConversationType == model.ConversationTypeGroup {
+		return s.sendGroupMessage(ctx, input, payload)
+	}
+	if conversation.ConversationType != model.ConversationTypePrivate {
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureConversationNotFound, "conversation not found")}, nil
+	}
+
+	return s.sendPrivateMessage(ctx, input, payload)
+}
+
+func (s *MessageService) sendPrivateMessage(ctx context.Context, input SendMessageInput, payload normalizedMessagePayload) (*SendMessageResult, *apperrors.AppError) {
 	receiverID, err := s.conversationRepo.FindPrivatePeerID(ctx, payload.ConversationID, input.SenderID)
 	if err != nil {
 		if errors.Is(err, mysqlrepo.ErrConversationNotFound) {
@@ -171,6 +196,78 @@ func (s *MessageService) SendMessage(ctx context.Context, input SendMessageInput
 	}, nil
 }
 
+func (s *MessageService) sendGroupMessage(ctx context.Context, input SendMessageInput, payload normalizedMessagePayload) (*SendMessageResult, *apperrors.AppError) {
+	if s.groupRepo == nil {
+		return nil, apperrors.ErrInternal
+	}
+
+	sendCtx, err := s.groupRepo.FindMessageContextByConversation(ctx, payload.ConversationID, input.SenderID)
+	if err != nil {
+		if errors.Is(err, mysqlrepo.ErrGroupMemberNotFound) {
+			return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureGroupNotMember, "not a group member")}, nil
+		}
+		return nil, apperrors.ErrInternal
+	}
+
+	existing, err := s.messageRepo.FindByClientMessageID(ctx, input.SenderID, payload.ConversationID, payload.ClientMsgID)
+	if err != nil && !errors.Is(err, mysqlrepo.ErrMessageNotFound) {
+		return nil, apperrors.ErrInternal
+	}
+	if existing != nil {
+		return s.handleExistingMessage(existing, payload.MessageType, payload.Content, payload.ExtraJSON), nil
+	}
+
+	if payload.MessageType != model.MessageTypeText {
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureInvalidRequest, "group messages only support text")}, nil
+	}
+	if sendCtx.Group.Status != model.GroupStatusNormal {
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureGroupDissolved, "group dissolved")}, nil
+	}
+	if sendCtx.Member.Status != model.GroupMemberStatusActive {
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureGroupNotMember, "not a group member")}, nil
+	}
+	if sendCtx.Member.MuteUntil.Valid && sendCtx.Member.MuteUntil.Time.After(now()) {
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureGroupMemberMuted, "group member muted")}, nil
+	}
+
+	message := &model.Message{
+		MessageID:      s.idGenerator.NextID(),
+		ConversationID: payload.ConversationID,
+		SenderID:       input.SenderID,
+		ClientMsgID:    payload.ClientMsgID,
+		MessageType:    payload.MessageType,
+		Content:        sql.NullString{String: payload.Content, Valid: true},
+		ExtraJSON:      sql.NullString{String: payload.ExtraJSON, Valid: true},
+		SendStatus:     model.MessageSendStatusSent,
+		CreatedAt:      now(),
+	}
+
+	memberIDs, err := s.messageRepo.CreateGroupMessage(ctx, message, sendCtx.Group.GroupID)
+	if err != nil {
+		if errors.Is(err, mysqlrepo.ErrDuplicateClientMessageID) {
+			existing, findErr := s.messageRepo.FindByClientMessageID(ctx, input.SenderID, payload.ConversationID, payload.ClientMsgID)
+			if findErr != nil {
+				return nil, apperrors.ErrInternal
+			}
+			return s.handleExistingMessage(existing, payload.MessageType, payload.Content, payload.ExtraJSON), nil
+		}
+		return nil, apperrors.ErrInternal
+	}
+
+	receiverIDs := make([]int64, 0, len(memberIDs))
+	for _, memberID := range memberIDs {
+		if memberID != input.SenderID {
+			receiverIDs = append(receiverIDs, memberID)
+		}
+	}
+
+	return &SendMessageResult{
+		Ack:         toAckOutput(message),
+		Receive:     toGroupReceiveOutput(message, sendCtx.Sender),
+		ReceiverIDs: receiverIDs,
+	}, nil
+}
+
 func (s *MessageService) ListConversationMessages(ctx context.Context, userID int64, conversationIDValue string, cursorValue string, limit int) (*MessagePageOutput, *apperrors.AppError) {
 	conversationID, appErr := parsePositiveID(conversationIDValue)
 	if appErr != nil {
@@ -192,6 +289,10 @@ func (s *MessageService) ListConversationMessages(ctx context.Context, userID in
 	if !isMember {
 		return nil, apperrors.ErrMessageAccessDenied
 	}
+	conversation, err := s.conversationRepo.FindByConversationID(ctx, conversationID)
+	if err != nil {
+		return nil, apperrors.ErrInternal
+	}
 
 	messages, err := s.messageRepo.ListVisibleConversationMessages(ctx, userID, conversationID, cursor, limit)
 	if err != nil {
@@ -199,9 +300,20 @@ func (s *MessageService) ListConversationMessages(ctx context.Context, userID in
 	}
 
 	reverseMessages(messages)
+	groupSenders := map[int64]model.GroupMessageSender{}
+	if conversation.ConversationType == model.ConversationTypeGroup && s.groupRepo != nil && conversation.RefID.Valid {
+		groupSenders, err = s.groupRepo.ListMessageSenders(ctx, conversation.RefID.Int64, uniqueMessageSenderIDs(messages))
+		if err != nil {
+			return nil, apperrors.ErrInternal
+		}
+	}
 	outputs := make([]MessageOutput, 0, len(messages))
 	for i := range messages {
-		outputs = append(outputs, toMessageOutput(&messages[i]))
+		output := toMessageOutput(&messages[i])
+		if sender, ok := groupSenders[messages[i].SenderID]; ok {
+			applyGroupSenderToMessageOutput(&output, sender)
+		}
+		outputs = append(outputs, output)
 	}
 
 	nextCursor := ""
@@ -563,6 +675,17 @@ func toReceiveOutput(message *model.Message) *MessageReceiveOutput {
 	}
 }
 
+func toGroupReceiveOutput(message *model.Message, sender model.GroupMessageSender) *MessageReceiveOutput {
+	output := toReceiveOutput(message)
+	output.SenderNickname = sender.Nickname
+	output.SenderAvatarURL = sender.AvatarURL
+	output.SenderGroupRole = sender.Role
+	if output.SenderGroupRole == "" {
+		output.SenderGroupRole = model.GroupRoleMember
+	}
+	return output
+}
+
 func toMessageOutput(message *model.Message) MessageOutput {
 	return MessageOutput{
 		ClientMsgID:    message.ClientMsgID,
@@ -577,11 +700,37 @@ func toMessageOutput(message *model.Message) MessageOutput {
 	}
 }
 
+func applyGroupSenderToMessageOutput(output *MessageOutput, sender model.GroupMessageSender) {
+	output.SenderNickname = sender.Nickname
+	output.SenderAvatarURL = sender.AvatarURL
+	output.SenderGroupRole = sender.Role
+	if output.SenderGroupRole == "" {
+		output.SenderGroupRole = model.GroupRoleMember
+	}
+}
+
 func messageExtraJSON(message *model.Message) json.RawMessage {
 	if message.ExtraJSON.Valid && strings.TrimSpace(message.ExtraJSON.String) != "" {
 		return json.RawMessage(message.ExtraJSON.String)
 	}
 	return json.RawMessage("{}")
+}
+
+func uniqueMessageSenderIDs(messages []model.Message) []int64 {
+	seen := make(map[int64]struct{}, len(messages))
+	ids := make([]int64, 0, len(messages))
+	for i := range messages {
+		userID := messages[i].SenderID
+		if userID <= 0 {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		ids = append(ids, userID)
+	}
+	return ids
 }
 
 func reverseMessages(messages []model.Message) {

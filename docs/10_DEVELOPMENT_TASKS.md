@@ -326,34 +326,241 @@ GET /api/search/files
 
 必须遵守删除、清空、撤回过滤规则。
 
-## 阶段 10：群聊
+## 阶段 10：群聊基础功能
 
-### Task 10.1 群聊表
+## 阶段 10：群聊基础功能
 
-创建 groups、group_members、group_join_requests。
-
-### Task 10.2 创建群聊
+阶段 10 拆分为：
 
 ```txt
-POST /api/groups
+Step 10    群聊基础功能
+Step 10.5  群聊成员 GUI 和身份标识
 ```
 
-### Task 10.3 搜索群和申请入群
+### Step 10：群聊基础功能
+
+目标：实现群聊后端基础能力和最小可用前端入口。
+
+范围：
 
 ```txt
-GET /api/groups/search
-POST /api/groups/{id}/join-requests
+创建群聊
+群号搜索
+申请入群
+审批入群
+群成员管理
+设置管理员
+取消管理员
+成员禁言
+修改群设置
+解散群聊
+群 text 消息
+群消息实时推送
+群消息历史分页
 ```
 
-### Task 10.4 审批入群
+要求：
 
-群主和管理员可处理。
+```txt
+用户可以创建群聊
+创建者自动成为群主 owner
+群默认最大人数 50，必须可配置
+系统生成 group_id 和 group_no
+用户可以通过 group_no 搜索群聊
+用户可以申请加入群聊
+群主或管理员可以同意 / 拒绝入群申请
+群角色包括 owner、admin、member
+群主可以设置管理员
+群主可以取消管理员
+群主和管理员可以设置成员禁言
+被禁言用户不能发送群消息
+群主和管理员可以修改 allow_member_invite
+群主可以解散群聊
+群解散后不能继续发送消息
+群消息复用 conversations 表和 messages 表
+群聊会话 conversation_type = group
+群消息本阶段只实现 text
+```
 
-### Task 10.5 群消息
+当前实现记录：
 
-通过同一个 chat.message.send 发送群消息。
+```txt
+已新增 backend/migrations/006_create_group_system.sql
+POST /api/groups 本阶段只创建群主，不处理 member_ids 初始成员加入
+group_no 为 8～10 位数字字符串，依赖唯一索引保证唯一，冲突重试
+群消息复用 sender_id + conversation_id + client_msg_id 幂等规则
+发送方成功后只收到 chat.message.ack，不额外收到自己的 chat.message.receive
+```
 
-### Task 10.6 群权限
+群消息发送校验：
+
+```txt
+群存在
+群未解散
+当前用户是群成员
+当前用户未被禁言
+message_type = text
+content 非空且不超过配置长度
+sender_id 必须来自服务端鉴权上下文
+```
+
+群消息 WebSocket 要求：
+
+```txt
+群消息复用 chat.message.send
+服务端根据 conversation_type = group 进入群聊发送逻辑
+发送成功后给发送方返回 chat.message.ack
+群内在线成员收到 chat.message.receive
+离线成员上线后通过历史消息接口分页拉取
+```
+
+群消息返回字段必须包含：
+
+```txt
+message_id
+conversation_id
+sender_id
+sender_nickname
+sender_avatar_url
+sender_group_role
+message_type
+content
+send_status
+created_at
+```
+
+权限规则：
+
+```txt
+群主 owner 可以设置管理员、取消管理员、禁言成员、修改群设置、解散群聊
+管理员 admin 可以审批入群、禁言普通成员、修改部分群设置
+普通成员 member 可以发送消息、查看群成员
+群主不能被管理员禁言
+管理员不能禁言群主
+管理员之间默认不能互相禁言
+所有群权限必须服务端校验
+```
+
+接口范围：
+
+```txt
+POST   /api/groups
+GET    /api/groups/search
+POST   /api/groups/{group_id}/join-requests
+GET    /api/groups/{group_id}/join-requests
+POST   /api/groups/join-requests/{request_id}/accept
+POST   /api/groups/join-requests/{request_id}/reject
+GET    /api/groups/{group_id}/members
+POST   /api/groups/{group_id}/admins/{user_id}
+DELETE /api/groups/{group_id}/admins/{user_id}
+POST   /api/groups/{group_id}/members/{user_id}/mute
+DELETE /api/groups/{group_id}/members/{user_id}/mute
+PUT    /api/groups/{group_id}/settings
+DELETE /api/groups/{group_id}
+```
+
+最小前端要求：
+
+```txt
+可以创建群聊
+可以搜索群号
+可以申请入群
+群主或管理员可以处理入群申请
+可以进入群聊会话
+可以发送群 text 消息
+被禁言时发送失败并显示错误
+群解散后不能继续发送
+可以查看基础群成员列表
+```
+
+严格限制：
+
+```txt
+不实现复杂群公告
+不实现群文件空间
+不实现语音通话
+不实现复杂邀请流程
+不重写好友系统
+不破坏单聊、文件消息、撤回、删除、清空逻辑
+不只靠前端隐藏按钮做权限控制
+```
+
+### Step 10.5：群聊成员 GUI 和身份标识
+
+目标：在 Step 10 群聊基础能力完成后，补齐群聊前端体验。
+
+范围：
+
+```txt
+群消息中显示群主 / 管理员身份标识
+查看群成员列表
+点击群成员查看资料
+从群成员资料弹窗中添加好友
+根据群角色和好友状态显示按钮
+```
+
+群消息身份标识：
+
+```txt
+owner 显示“群主”标识，金色
+admin 显示“管理员”标识，绿色
+member 不显示身份标识
+前端必须使用 sender_group_role，不允许根据昵称判断身份
+历史消息和实时消息都要显示身份标识
+```
+
+群成员列表展示：
+
+```txt
+头像 avatar_url
+昵称 nickname
+user_id
+个性签名 bio
+群角色 role
+禁言状态 mute_until
+好友状态 friendship_status
+```
+
+群成员排序建议：
+
+```txt
+群主 owner 在最上方
+管理员 admin 其次
+普通成员 member 再后
+同角色内按 joined_at 或 nickname 排序
+```
+
+群成员资料弹窗：
+
+```txt
+展示头像、昵称、user_id、bio、role、friendship_status
+点击自己时不显示添加好友按钮
+friendship_status = friend 时显示已是好友或发消息
+friendship_status = not_friend 时显示添加好友
+friendship_status = pending_sent 时显示申请中
+friendship_status = pending_received 时提示对方已申请添加你
+添加好友必须复用 POST /api/friends/requests
+```
+
+建议新增前端组件：
+
+```txt
+GroupRoleBadge
+GroupMemberList
+GroupMemberDrawer 或 GroupMemberModal
+GroupMemberProfileModal
+```
+
+严格限制：
+
+```txt
+不重写 Step 10 群聊主链路
+不重写好友系统
+不重写单聊消息逻辑
+不新增重复好友接口
+不通过 nickname 或 avatar 匹配用户
+必须使用 user_id、group_id、conversation_id
+```
 
 实现：
 

@@ -362,7 +362,7 @@ CREATE TABLE message_user_states (
 CREATE TABLE groups (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   group_id BIGINT NOT NULL UNIQUE,
-  group_no VARCHAR(32) NOT NULL UNIQUE,
+  group_no VARCHAR(10) NOT NULL UNIQUE,
   conversation_id BIGINT NOT NULL UNIQUE,
   owner_id BIGINT NOT NULL,
   name VARCHAR(100) NOT NULL,
@@ -391,6 +391,7 @@ CREATE TABLE group_members (
   status VARCHAR(20) NOT NULL DEFAULT 'active',
   joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   left_at DATETIME NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_group_member (group_id, user_id),
   INDEX idx_group_members_user (user_id, status),
   INDEX idx_group_members_group_role (group_id, role, status),
@@ -404,20 +405,31 @@ CREATE TABLE group_members (
 ```sql
 CREATE TABLE group_join_requests (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  request_id BIGINT NOT NULL UNIQUE,
+  request_id BIGINT NOT NULL,
   group_id BIGINT NOT NULL,
   user_id BIGINT NOT NULL,
   message VARCHAR(255) NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'pending',
   handled_by BIGINT NULL,
+  pending_key VARCHAR(64)
+    GENERATED ALWAYS AS (
+      CASE
+        WHEN status = 'pending' THEN CONCAT(group_id, ':', user_id)
+        ELSE NULL
+      END
+    ) STORED,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_group_join_requests_request_id (request_id),
+  UNIQUE KEY uk_group_join_requests_pending_key (pending_key),
   INDEX idx_group_join_group_status (group_id, status),
   INDEX idx_group_join_user_status (user_id, status),
   CONSTRAINT fk_group_join_group FOREIGN KEY (group_id) REFERENCES groups(group_id),
   CONSTRAINT fk_group_join_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
+
+当前实现：对应 `backend/migrations/006_create_group_system.sql`。`group_id` 使用雪花 ID；`group_no` 为 8～10 位数字字符串，通过唯一索引保证唯一，冲突时由服务层重试。`group_join_requests.pending_key` 只限制同一用户对同一群同时存在一条 pending 申请，历史 accepted / rejected 申请允许保留多条。
 
 ### 4.14 files 文件表
 

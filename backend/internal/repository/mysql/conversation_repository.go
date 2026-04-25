@@ -99,7 +99,8 @@ SELECT
   c.conversation_id, c.conversation_type, c.last_message_id, c.last_message_at, c.updated_at,
   s.unread_count, s.is_pinned, s.is_muted,
   u.id, u.user_id, u.username, u.password_hash, u.user_type, u.status, u.created_at, u.updated_at, u.deleted_at,
-  p.id, p.user_id, p.nickname, p.avatar_url, p.gender, p.bio, p.profile_status, p.profile_review_reason, p.created_at, p.updated_at
+  p.id, p.user_id, p.nickname, p.avatar_url, p.gender, p.bio, p.profile_status, p.profile_review_reason, p.created_at, p.updated_at,
+  g.group_id, g.group_no, g.name, g.avatar_url, g.status
 FROM conversations c
 INNER JOIN conversation_user_states s ON s.conversation_id = c.conversation_id AND s.user_id = ?
 INNER JOIN conversation_members self_cm ON self_cm.conversation_id = c.conversation_id AND self_cm.user_id = ?
@@ -109,12 +110,15 @@ LEFT JOIN conversation_members peer_cm
   AND c.conversation_type = ?
 LEFT JOIN users u ON u.user_id = peer_cm.user_id AND u.deleted_at IS NULL
 LEFT JOIN user_profiles p ON p.user_id = u.user_id
+LEFT JOIN `+"`groups`"+` g
+  ON g.conversation_id = c.conversation_id
+  AND c.conversation_type = ?
 WHERE c.status = ?
   AND s.is_deleted = 0
   AND self_cm.status = ?
 ORDER BY s.is_pinned DESC, COALESCE(c.last_message_at, c.updated_at) DESC, c.updated_at DESC
 LIMIT ? OFFSET ?
-`, userID, userID, userID, model.ConversationTypePrivate, model.ConversationStatusNormal, model.ConversationMemberStatusActive, limit, offset)
+`, userID, userID, userID, model.ConversationTypePrivate, model.ConversationTypeGroup, model.ConversationStatusNormal, model.ConversationMemberStatusActive, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -160,6 +164,33 @@ LIMIT 1
 		return 0, err
 	}
 	return peerID, nil
+}
+
+func (r *ConversationRepository) FindByConversationID(ctx context.Context, conversationID int64) (*model.Conversation, error) {
+	row := r.db.QueryRowContext(ctx, `
+SELECT id, conversation_id, conversation_type, ref_id, last_message_id, last_message_at, status, created_at, updated_at
+FROM conversations
+WHERE conversation_id = ?
+LIMIT 1
+`, conversationID)
+	var conversation model.Conversation
+	if err := row.Scan(
+		&conversation.ID,
+		&conversation.ConversationID,
+		&conversation.ConversationType,
+		&conversation.RefID,
+		&conversation.LastMessageID,
+		&conversation.LastMessageAt,
+		&conversation.Status,
+		&conversation.CreatedAt,
+		&conversation.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrConversationNotFound
+		}
+		return nil, err
+	}
+	return &conversation, nil
 }
 
 func (r *ConversationRepository) IsActiveMember(ctx context.Context, conversationID int64, userID int64) (bool, error) {
@@ -291,6 +322,11 @@ func scanConversationListItem(row scanner) (*model.ConversationListItem, error) 
 		&peer.ProfileReviewReason,
 		&peer.ProfileCreatedAt,
 		&peer.ProfileUpdatedAt,
+		&item.GroupID,
+		&item.GroupNo,
+		&item.GroupName,
+		&item.GroupAvatarURL,
+		&item.GroupStatus,
 	); err != nil {
 		return nil, err
 	}

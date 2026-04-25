@@ -52,6 +52,13 @@ func toConversationOutput(item *model.ConversationListItem) ConversationOutput {
 		output.PeerNickname = item.Peer.Profile.Nickname
 		output.PeerAvatarURL = item.Peer.Profile.AvatarURL.String
 	}
+	if item.ConversationType == model.ConversationTypeGroup && item.GroupID.Valid {
+		output.GroupID = formatID(item.GroupID.Int64)
+		output.GroupNo = item.GroupNo.String
+		output.GroupStatus = item.GroupStatus.String
+		output.Title = item.GroupName.String
+		output.AvatarURL = item.GroupAvatarURL.String
+	}
 
 	return output
 }
