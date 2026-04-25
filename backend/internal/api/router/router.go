@@ -13,6 +13,7 @@ type Dependencies struct {
 	FriendHandler       *handler.FriendHandler
 	ConversationHandler *handler.ConversationHandler
 	MessageHandler      *handler.MessageHandler
+	FileHandler         *handler.FileHandler
 	AuthMiddleware      gin.HandlerFunc
 	WSServer            *ws.Server
 }
@@ -41,6 +42,9 @@ func New(deps Dependencies) *gin.Engine {
 	}
 	if deps.MessageHandler != nil && deps.AuthMiddleware != nil {
 		deps.MessageHandler.Register(api, deps.AuthMiddleware)
+	}
+	if deps.FileHandler != nil && deps.AuthMiddleware != nil {
+		deps.FileHandler.Register(api, deps.AuthMiddleware)
 	}
 
 	return engine

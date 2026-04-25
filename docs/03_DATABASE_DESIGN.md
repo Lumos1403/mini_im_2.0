@@ -439,6 +439,8 @@ CREATE TABLE files (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
+当前实现：对应 `backend/migrations/005_create_files.sql`，MVP 仅保存本地存储元信息。
+
 ## 5. 查询规则
 
 ### 5.1 获取会话消息

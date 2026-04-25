@@ -63,7 +63,7 @@ func (d *SyncMessageDispatcher) Dispatch(ctx context.Context, client *Client, en
 	dispatchCtx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
 
-	result, appErr := d.messageService.SendTextMessage(dispatchCtx, service.SendTextMessageInput{
+	result, appErr := d.messageService.SendMessage(dispatchCtx, service.SendMessageInput{
 		SenderID:       client.UserID,
 		ConversationID: data.ConversationID,
 		ClientMsgID:    data.ClientMsgID,

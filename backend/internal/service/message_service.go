@@ -22,10 +22,12 @@ const (
 	wsFailureNotFriends                   = "not_friends"
 	wsFailureBlocked                      = "failed_blocked"
 	wsFailureDuplicateClientMsgIDConflict = "duplicate_client_msg_id_conflict"
+	wsFailureFileNotFound                 = "file_not_found"
+	wsFailureFileAccessDenied             = "file_access_denied"
 	wsFailureInternal                     = "internal_error"
 )
 
-type SendTextMessageInput struct {
+type SendMessageInput struct {
 	SenderID       int64
 	ConversationID string
 	ClientMsgID    string
@@ -34,7 +36,15 @@ type SendTextMessageInput struct {
 	ExtraJSON      json.RawMessage
 }
 
-type SendTextMessageResult struct {
+type normalizedMessagePayload struct {
+	ConversationID int64
+	ClientMsgID    string
+	MessageType    string
+	Content        string
+	ExtraJSON      string
+}
+
+type SendMessageResult struct {
 	Ack        *SendMessageAckOutput
 	Failed     *SendMessageFailedOutput
 	Receive    *MessageReceiveOutput
@@ -46,6 +56,7 @@ type MessageService struct {
 	conversationRepo     *mysqlrepo.ConversationRepository
 	friendRepo           *mysqlrepo.FriendRepository
 	messageRepo          *mysqlrepo.MessageRepository
+	fileRepo             *mysqlrepo.FileRepository
 	messageCacheRepo     *redisrepo.MessageRepository
 	idGenerator          *snowflake.Node
 	textMessageMaxLength int
@@ -61,6 +72,7 @@ func NewMessageService(
 	conversationRepo *mysqlrepo.ConversationRepository,
 	friendRepo *mysqlrepo.FriendRepository,
 	messageRepo *mysqlrepo.MessageRepository,
+	fileRepo *mysqlrepo.FileRepository,
 	messageCacheRepo *redisrepo.MessageRepository,
 	idGenerator *snowflake.Node,
 	textMessageMaxLength int,
@@ -76,6 +88,7 @@ func NewMessageService(
 		conversationRepo:     conversationRepo,
 		friendRepo:           friendRepo,
 		messageRepo:          messageRepo,
+		fileRepo:             fileRepo,
 		messageCacheRepo:     messageCacheRepo,
 		idGenerator:          idGenerator,
 		textMessageMaxLength: textMessageMaxLength,
@@ -87,26 +100,29 @@ func (s *MessageService) SetRecallNotifier(notifier MessageRecallNotifier) {
 	s.recallNotifier = notifier
 }
 
-func (s *MessageService) SendTextMessage(ctx context.Context, input SendTextMessageInput) (*SendTextMessageResult, *apperrors.AppError) {
-	conversationID, clientMsgID, content, extraJSON, appErr := s.validateSendInput(input)
+func (s *MessageService) SendMessage(ctx context.Context, input SendMessageInput) (*SendMessageResult, *apperrors.AppError) {
+	payload, appErr := s.validateSendInput(ctx, input)
 	if appErr != nil {
-		return &SendTextMessageResult{Failed: failedMessage(input.ClientMsgID, input.ConversationID, model.MessageSendStatusFailed, wsFailureInvalidRequest, appErr.Message)}, nil
+		if appErr == apperrors.ErrInternal {
+			return nil, appErr
+		}
+		return &SendMessageResult{Failed: failedMessage(input.ClientMsgID, input.ConversationID, model.MessageSendStatusFailed, sendValidationFailureCode(appErr), appErr.Message)}, nil
 	}
 
-	receiverID, err := s.conversationRepo.FindPrivatePeerID(ctx, conversationID, input.SenderID)
+	receiverID, err := s.conversationRepo.FindPrivatePeerID(ctx, payload.ConversationID, input.SenderID)
 	if err != nil {
 		if errors.Is(err, mysqlrepo.ErrConversationNotFound) {
-			return &SendTextMessageResult{Failed: failedMessage(clientMsgID, formatID(conversationID), model.MessageSendStatusFailed, wsFailureConversationNotFound, "conversation not found")}, nil
+			return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureConversationNotFound, "conversation not found")}, nil
 		}
 		return nil, apperrors.ErrInternal
 	}
 
-	existing, err := s.messageRepo.FindByClientMessageID(ctx, input.SenderID, conversationID, clientMsgID)
+	existing, err := s.messageRepo.FindByClientMessageID(ctx, input.SenderID, payload.ConversationID, payload.ClientMsgID)
 	if err != nil && !errors.Is(err, mysqlrepo.ErrMessageNotFound) {
 		return nil, apperrors.ErrInternal
 	}
 	if existing != nil {
-		return s.handleExistingMessage(existing, content, extraJSON), nil
+		return s.handleExistingMessage(existing, payload.MessageType, payload.Content, payload.ExtraJSON), nil
 	}
 
 	areFriends, err := s.friendRepo.AreFriends(ctx, input.SenderID, receiverID)
@@ -114,7 +130,7 @@ func (s *MessageService) SendTextMessage(ctx context.Context, input SendTextMess
 		return nil, apperrors.ErrInternal
 	}
 	if !areFriends {
-		return &SendTextMessageResult{Failed: failedMessage(clientMsgID, formatID(conversationID), model.MessageSendStatusFailed, wsFailureNotFriends, "users are not friends")}, nil
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureNotFriends, "users are not friends")}, nil
 	}
 
 	blocked, err := s.friendRepo.IsBlocked(ctx, receiverID, input.SenderID)
@@ -122,33 +138,33 @@ func (s *MessageService) SendTextMessage(ctx context.Context, input SendTextMess
 		return nil, apperrors.ErrInternal
 	}
 	if blocked {
-		return s.createBlockedMessage(ctx, input.SenderID, conversationID, clientMsgID, content, extraJSON), nil
+		return s.createBlockedMessage(ctx, input.SenderID, payload), nil
 	}
 
 	message := &model.Message{
 		MessageID:      s.idGenerator.NextID(),
-		ConversationID: conversationID,
+		ConversationID: payload.ConversationID,
 		SenderID:       input.SenderID,
-		ClientMsgID:    clientMsgID,
-		MessageType:    model.MessageTypeText,
-		Content:        sql.NullString{String: content, Valid: true},
-		ExtraJSON:      sql.NullString{String: extraJSON, Valid: true},
+		ClientMsgID:    payload.ClientMsgID,
+		MessageType:    payload.MessageType,
+		Content:        sql.NullString{String: payload.Content, Valid: true},
+		ExtraJSON:      sql.NullString{String: payload.ExtraJSON, Valid: true},
 		SendStatus:     model.MessageSendStatusSent,
 		CreatedAt:      now(),
 	}
 
-	if err := s.messageRepo.CreatePrivateTextMessage(ctx, message, receiverID); err != nil {
+	if err := s.messageRepo.CreatePrivateMessage(ctx, message, receiverID); err != nil {
 		if errors.Is(err, mysqlrepo.ErrDuplicateClientMessageID) {
-			existing, findErr := s.messageRepo.FindByClientMessageID(ctx, input.SenderID, conversationID, clientMsgID)
+			existing, findErr := s.messageRepo.FindByClientMessageID(ctx, input.SenderID, payload.ConversationID, payload.ClientMsgID)
 			if findErr != nil {
 				return nil, apperrors.ErrInternal
 			}
-			return s.handleExistingMessage(existing, content, extraJSON), nil
+			return s.handleExistingMessage(existing, payload.MessageType, payload.Content, payload.ExtraJSON), nil
 		}
 		return nil, apperrors.ErrInternal
 	}
 
-	return &SendTextMessageResult{
+	return &SendMessageResult{
 		Ack:        toAckOutput(message),
 		Receive:    toReceiveOutput(message),
 		ReceiverID: receiverID,
@@ -319,39 +335,99 @@ func (s *MessageService) GetRecallEditCache(ctx context.Context, userID int64, m
 	}, nil
 }
 
-func (s *MessageService) validateSendInput(input SendTextMessageInput) (int64, string, string, string, *apperrors.AppError) {
+func (s *MessageService) validateSendInput(ctx context.Context, input SendMessageInput) (normalizedMessagePayload, *apperrors.AppError) {
 	conversationID, appErr := parsePositiveID(input.ConversationID)
 	if appErr != nil {
-		return 0, "", "", "", appErr
+		return normalizedMessagePayload{}, appErr
 	}
 
 	clientMsgID := strings.TrimSpace(input.ClientMsgID)
 	if clientMsgID == "" || utf8.RuneCountInString(clientMsgID) > 64 {
-		return 0, "", "", "", apperrors.ErrInvalidParam
+		return normalizedMessagePayload{}, apperrors.ErrInvalidParam
 	}
 
-	if input.MessageType != model.MessageTypeText {
-		return 0, "", "", "", apperrors.ErrMessageInvalidContent
+	switch input.MessageType {
+	case model.MessageTypeText:
+		return s.validateTextMessageInput(input, conversationID, clientMsgID)
+	case model.MessageTypeFile:
+		return s.validateFileMessageInput(ctx, input, conversationID, clientMsgID)
+	default:
+		return normalizedMessagePayload{}, apperrors.ErrMessageInvalidContent
 	}
+}
 
+func (s *MessageService) validateTextMessageInput(input SendMessageInput, conversationID int64, clientMsgID string) (normalizedMessagePayload, *apperrors.AppError) {
 	content := strings.TrimSpace(input.Content)
 	if content == "" || utf8.RuneCountInString(content) > s.textMessageMaxLength {
-		return 0, "", "", "", apperrors.ErrMessageInvalidContent
+		return normalizedMessagePayload{}, apperrors.ErrMessageInvalidContent
 	}
 
 	extraJSON, appErr := normalizeExtraJSON(input.ExtraJSON)
 	if appErr != nil {
-		return 0, "", "", "", appErr
+		return normalizedMessagePayload{}, appErr
 	}
 
-	return conversationID, clientMsgID, content, extraJSON, nil
+	return normalizedMessagePayload{
+		ConversationID: conversationID,
+		ClientMsgID:    clientMsgID,
+		MessageType:    model.MessageTypeText,
+		Content:        content,
+		ExtraJSON:      extraJSON,
+	}, nil
 }
 
-func (s *MessageService) handleExistingMessage(existing *model.Message, content string, extraJSON string) *SendTextMessageResult {
-	if existing.MessageType != model.MessageTypeText ||
+func (s *MessageService) validateFileMessageInput(ctx context.Context, input SendMessageInput, conversationID int64, clientMsgID string) (normalizedMessagePayload, *apperrors.AppError) {
+	if s.fileRepo == nil {
+		return normalizedMessagePayload{}, apperrors.ErrInternal
+	}
+
+	fileID, appErr := parsePositiveID(input.Content)
+	if appErr != nil {
+		return normalizedMessagePayload{}, apperrors.ErrMessageInvalidContent
+	}
+
+	file, err := s.fileRepo.FindByFileID(ctx, fileID)
+	if err != nil {
+		if errors.Is(err, mysqlrepo.ErrFileNotFound) {
+			return normalizedMessagePayload{}, apperrors.ErrFileNotFound
+		}
+		return normalizedMessagePayload{}, apperrors.ErrInternal
+	}
+	if file.UploaderID != input.SenderID {
+		return normalizedMessagePayload{}, apperrors.ErrFileAccessDenied
+	}
+
+	extraJSON, err := json.Marshal(fileMessageExtraOutput{
+		FileID:   formatID(file.FileID),
+		FileName: file.OriginalName,
+		FileSize: file.FileSize,
+		MimeType: file.MimeType.String,
+	})
+	if err != nil {
+		return normalizedMessagePayload{}, apperrors.ErrInternal
+	}
+
+	return normalizedMessagePayload{
+		ConversationID: conversationID,
+		ClientMsgID:    clientMsgID,
+		MessageType:    model.MessageTypeFile,
+		Content:        formatID(file.FileID),
+		ExtraJSON:      string(extraJSON),
+	}, nil
+}
+
+type fileMessageExtraOutput struct {
+	FileID   string `json:"file_id"`
+	FileName string `json:"file_name"`
+	FileSize int64  `json:"file_size"`
+	MimeType string `json:"mime_type"`
+}
+
+func (s *MessageService) handleExistingMessage(existing *model.Message, messageType string, content string, extraJSON string) *SendMessageResult {
+	if existing.MessageType != messageType ||
 		existing.Content.String != content ||
 		existing.ExtraJSON.String != extraJSON {
-		return &SendTextMessageResult{
+		return &SendMessageResult{
 			Failed: failedMessageWithServerMessage(
 				existing,
 				existing.ClientMsgID,
@@ -364,43 +440,43 @@ func (s *MessageService) handleExistingMessage(existing *model.Message, content 
 	}
 
 	if existing.SendStatus == model.MessageSendStatusFailedBlocked {
-		return &SendTextMessageResult{
+		return &SendMessageResult{
 			Failed:     failedMessageFromMessage(existing, wsFailureBlocked, "对方已拒收你的消息"),
 			Duplicated: true,
 		}
 	}
 
-	return &SendTextMessageResult{
+	return &SendMessageResult{
 		Ack:        toAckOutput(existing),
 		Duplicated: true,
 	}
 }
 
-func (s *MessageService) createBlockedMessage(ctx context.Context, senderID int64, conversationID int64, clientMsgID string, content string, extraJSON string) *SendTextMessageResult {
+func (s *MessageService) createBlockedMessage(ctx context.Context, senderID int64, payload normalizedMessagePayload) *SendMessageResult {
 	message := &model.Message{
 		MessageID:      s.idGenerator.NextID(),
-		ConversationID: conversationID,
+		ConversationID: payload.ConversationID,
 		SenderID:       senderID,
-		ClientMsgID:    clientMsgID,
-		MessageType:    model.MessageTypeText,
-		Content:        sql.NullString{String: content, Valid: true},
-		ExtraJSON:      sql.NullString{String: extraJSON, Valid: true},
+		ClientMsgID:    payload.ClientMsgID,
+		MessageType:    payload.MessageType,
+		Content:        sql.NullString{String: payload.Content, Valid: true},
+		ExtraJSON:      sql.NullString{String: payload.ExtraJSON, Valid: true},
 		SendStatus:     model.MessageSendStatusFailedBlocked,
 		CreatedAt:      now(),
 	}
 
-	if err := s.messageRepo.CreateBlockedPrivateTextMessage(ctx, message); err != nil {
+	if err := s.messageRepo.CreateBlockedPrivateMessage(ctx, message); err != nil {
 		if errors.Is(err, mysqlrepo.ErrDuplicateClientMessageID) {
-			existing, findErr := s.messageRepo.FindByClientMessageID(ctx, senderID, conversationID, clientMsgID)
+			existing, findErr := s.messageRepo.FindByClientMessageID(ctx, senderID, payload.ConversationID, payload.ClientMsgID)
 			if findErr != nil {
-				return &SendTextMessageResult{Failed: failedMessage(clientMsgID, formatID(conversationID), model.MessageSendStatusFailed, wsFailureInternal, "message send failed")}
+				return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureInternal, "message send failed")}
 			}
-			return s.handleExistingMessage(existing, content, extraJSON)
+			return s.handleExistingMessage(existing, payload.MessageType, payload.Content, payload.ExtraJSON)
 		}
-		return &SendTextMessageResult{Failed: failedMessage(clientMsgID, formatID(conversationID), model.MessageSendStatusFailed, wsFailureInternal, "message send failed")}
+		return &SendMessageResult{Failed: failedMessage(payload.ClientMsgID, formatID(payload.ConversationID), model.MessageSendStatusFailed, wsFailureInternal, "message send failed")}
 	}
 
-	return &SendTextMessageResult{
+	return &SendMessageResult{
 		Failed: failedMessageFromMessage(message, wsFailureBlocked, "对方已拒收你的消息"),
 	}
 }
@@ -424,6 +500,20 @@ func normalizeExtraJSON(raw json.RawMessage) (string, *apperrors.AppError) {
 		return "", apperrors.ErrInvalidParam
 	}
 	return string(normalized), nil
+}
+
+func sendValidationFailureCode(appErr *apperrors.AppError) string {
+	if appErr == nil {
+		return wsFailureInvalidRequest
+	}
+	switch appErr.Code {
+	case apperrors.ErrFileNotFound.Code:
+		return wsFailureFileNotFound
+	case apperrors.ErrFileAccessDenied.Code:
+		return wsFailureFileAccessDenied
+	default:
+		return wsFailureInvalidRequest
+	}
 }
 
 func failedMessage(clientMsgID string, conversationID string, sendStatus string, code string, message string) *SendMessageFailedOutput {

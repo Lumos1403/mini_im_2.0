@@ -14,6 +14,7 @@ import (
 	mysqlrepo "mini_im/backend/internal/repository/mysql"
 	redisrepo "mini_im/backend/internal/repository/redis"
 	"mini_im/backend/internal/service"
+	"mini_im/backend/internal/storage"
 	"mini_im/backend/internal/ws"
 
 	"github.com/gin-gonic/gin"
@@ -58,15 +59,21 @@ func main() {
 	friendRepo := mysqlrepo.NewFriendRepository(db)
 	conversationRepo := mysqlrepo.NewConversationRepository(db)
 	messageRepo := mysqlrepo.NewMessageRepository(db)
+	fileRepo := mysqlrepo.NewFileRepository(db)
 	tokenRepo := redisrepo.NewTokenRepository(redisClient)
 	onlineRepo := redisrepo.NewOnlineRepository(redisClient)
 	messageCacheRepo := redisrepo.NewMessageRepository(redisClient)
+	fileStorage, err := storage.NewLocalFileStorage(cfg.File.LocalPath)
+	if err != nil {
+		logger.L().Fatal("file storage init failed", zap.Error(err))
+	}
 	agentService := service.NewAgentService()
 	authService := service.NewAuthService(userRepo, tokenRepo, tokenManager, idGenerator, agentService)
 	userService := service.NewUserService(userRepo)
 	conversationService := service.NewConversationService(conversationRepo)
 	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator, nil)
-	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)
+	fileService := service.NewFileService(fileRepo, fileStorage, idGenerator, cfg.File.MaxSizeMB)
+	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, fileRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)
 	onlineService := service.NewOnlineService(onlineRepo, cfg.WebSocket.ServerID, time.Duration(cfg.WebSocket.OnlineTTLSeconds)*time.Second)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
 	wsHub := ws.NewHub(onlineService)
@@ -81,6 +88,7 @@ func main() {
 		FriendHandler:       handler.NewFriendHandler(friendService),
 		ConversationHandler: handler.NewConversationHandler(conversationService),
 		MessageHandler:      handler.NewMessageHandler(messageService),
+		FileHandler:         handler.NewFileHandler(fileService),
 		AuthMiddleware:      authMiddleware,
 		WSServer:            wsServer,
 	})

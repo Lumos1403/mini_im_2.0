@@ -1,0 +1,10 @@
+HTTP/1.1 200 OK
+Cache-Control: no-store
+Content-Disposition: attachment; filename=step9-file.txt
+Content-Length: 38
+Content-Security-Policy: default-src 'none'
+Content-Type: text/plain
+Cross-Origin-Resource-Policy: same-origin
+X-Content-Type-Options: nosniff
+Date: Sat, 25 Apr 2026 06:16:31 GMT
+

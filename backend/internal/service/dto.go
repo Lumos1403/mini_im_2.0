@@ -181,3 +181,10 @@ type MessageRecalledEventOutput struct {
 	RecalledBy     string `json:"recalled_by"`
 	RecalledAt     string `json:"recalled_at"`
 }
+
+type FileUploadOutput struct {
+	FileID       string `json:"file_id"`
+	OriginalName string `json:"original_name"`
+	FileSize     int64  `json:"file_size"`
+	MimeType     string `json:"mime_type"`
+}

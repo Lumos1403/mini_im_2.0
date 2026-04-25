@@ -55,6 +55,10 @@ var (
 	ErrMessageAccessDenied   = New(50004, "message access denied")
 	ErrMessageInvalidContent = New(50005, "message content invalid")
 	ErrMessageConflict       = New(50006, "client_msg_id already exists with different content")
+	ErrFileNotFound          = New(70001, "file not found")
+	ErrFileAccessDenied      = New(70002, "file access denied")
+	ErrFileTooLarge          = New(70003, "file too large")
+	ErrFileInvalid           = New(70004, "file invalid")
 )
 
 func HTTPStatus(err *AppError) int {
@@ -94,6 +98,14 @@ func HTTPStatus(err *AppError) int {
 		return http.StatusBadRequest
 	case 50006:
 		return http.StatusConflict
+	case 70001:
+		return http.StatusNotFound
+	case 70002:
+		return http.StatusForbidden
+	case 70003:
+		return http.StatusRequestEntityTooLarge
+	case 70004, CodeFile:
+		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
 	}

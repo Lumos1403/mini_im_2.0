@@ -409,7 +409,7 @@ WebSocket 事件：
 
 请先输出实现计划、消息流转说明、预计修改文件，等我确认后再写代码。
 
-## 第八轮提示词：消息删除、清空、撤回ing
+## 第八轮提示词：消息删除、清空、撤回done
 
 你现在只完成 Step 8：消息删除、清空聊天记录、5 分钟撤回、重新编辑缓存。
 
@@ -460,17 +460,18 @@ WebSocket 事件：
 
 请先输出实现计划、数据状态变化说明、预计修改文件，等我确认后再写代码。
 
-## 第九轮提示词：文件消息
+## 第九轮提示词：文件消息ing
 
 你现在只完成 Step 9：文件上传、文件下载鉴权、文件消息。
 
 请先阅读：
 
 1. AGENTS.md
-2. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“文件消息系统”部分
-3. docs/03_DATABASE_DESIGN.md 中 files 表
-4. docs/04_API_SPEC.md 中 files 相关接口
-5. docs/08_SECURITY_AND_CONCURRENCY.md 中文件安全部分
+2. START_HERE.md,这两个md文档会帮助你理解项目
+3. docs/01_PROJECT_DEVELOPMENT_SPEC.md 中“文件消息系统”部分
+4. docs/03_DATABASE_DESIGN.md 中 files 表
+5. docs/04_API_SPEC.md 中 files 相关接口
+6. docs/08_SECURITY_AND_CONCURRENCY.md 中文件安全部分
 
 当前任务目标：
 实现文件上传、文件下载鉴权、文件消息发送。

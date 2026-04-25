@@ -197,6 +197,15 @@ text 消息 content trim 后不能为空，默认最大 2000，可通过配置�
 }
 ```
 
+说明：
+
+```txt
+file 消息复用 chat.message.send 发送流程
+content 必须为 file_id 字符串
+服务端必须校验 file_id 存在且发送者是文件上传者
+服务端根据 files 表生成并保存 extra_json，不能信任客户端传入的文件名、大小和 MIME 类型
+```
+
 ## 6. 服务端确认 ACK
 
 事件类型：

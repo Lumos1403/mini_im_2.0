@@ -42,7 +42,7 @@ func NewMessageRepository(db *sql.DB) *MessageRepository {
 	return &MessageRepository{db: db}
 }
 
-func (r *MessageRepository) CreatePrivateTextMessage(ctx context.Context, message *model.Message, receiverID int64) error {
+func (r *MessageRepository) CreatePrivateMessage(ctx context.Context, message *model.Message, receiverID int64) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -72,7 +72,7 @@ WHERE conversation_id = ?
 	return tx.Commit()
 }
 
-func (r *MessageRepository) CreateBlockedPrivateTextMessage(ctx context.Context, message *model.Message) error {
+func (r *MessageRepository) CreateBlockedPrivateMessage(ctx context.Context, message *model.Message) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
