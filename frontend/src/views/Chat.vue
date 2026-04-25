@@ -1,254 +1,60 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-import {
-  clearConversationMessages,
-  deleteMessage,
-  getRecallEditCache,
-  listConversations,
-  listMessages,
-  recallMessage,
-  type Conversation,
-  type FileMessageExtra,
-  type Message,
-  type MessageType,
-} from '../api/conversation'
-import { downloadFile, uploadFile, type FileUploadResult } from '../api/file'
 import type { FriendItem } from '../api/friend'
 import FriendPanel from '../components/friend/FriendPanel.vue'
-import { useAuthStore } from '../stores/auth'
+import { useChatStore } from '../stores/chat'
+import { useWsStore } from '../stores/ws'
 
-interface Envelope<T = unknown> {
-  seq: string
-  type: string
-  data: T
-  timestamp: number
-}
+const chat = useChatStore()
+const ws = useWsStore()
 
-interface AckData {
-  client_msg_id: string
-  message_id: string
-  conversation_id: string
-  send_status: string
-  server_time: string
-}
+const {
+  conversations,
+  activeConversationID,
+  messages,
+  draft,
+  loadingConversations,
+  loadingMessages,
+  uploadingFile,
+  hasMore,
+  errorMessage,
+  scrollToBottomSignal,
+} = storeToRefs(chat)
+const { connected: wsConnected } = storeToRefs(ws)
 
-interface FailedData {
-  client_msg_id: string
-  message_id?: string
-  conversation_id: string
-  send_status: string
-  code: string
-  message: string
-  server_time?: string
-}
-
-interface RecalledData {
-  message_id: string
-  conversation_id: string
-  recalled_by: string
-  recalled_at: string
-}
-
-interface StoredRecallNotice {
-  user_id: string
-  conversation_id: string
-  message_id: string
-  recalled_at: string
-  editable_until: string
-}
-
-type ChatMessage = Message & {
-  error_message?: string
-  is_recall_notice?: boolean
-  recalled_message_id?: string
-  editable_until?: string
-}
-
-const recallNoticeStoragePrefix = 'mini_im:recall_notices:'
-const defaultMaxUploadSizeMB = 50
-const configuredMaxUploadSizeMB = Number(import.meta.env.VITE_FILE_MAX_SIZE_MB)
-const maxUploadSizeMB =
-  Number.isFinite(configuredMaxUploadSizeMB) && configuredMaxUploadSizeMB > 0
-    ? configuredMaxUploadSizeMB
-    : defaultMaxUploadSizeMB
-const maxUploadSizeBytes = maxUploadSizeMB * 1024 * 1024
-
-const auth = useAuthStore()
-const conversations = ref<Conversation[]>([])
-const activeConversationID = ref('')
-const messages = ref<ChatMessage[]>([])
-const draft = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
-const loadingConversations = ref(false)
-const loadingMessages = ref(false)
-const uploadingFile = ref(false)
-const hasMore = ref(false)
-const errorMessage = ref('')
-const wsConnected = ref(false)
-const recallNoticeNow = ref(Date.now())
+const messageArea = ref<HTMLElement | null>(null)
 
-let socket: WebSocket | null = null
-let recallNoticeTimer: number | undefined
-
-const activeConversation = computed(() =>
-  conversations.value.find((item) => item.conversation_id === activeConversationID.value),
-)
-
-const canSend = computed(() => wsConnected.value && activeConversationID.value && draft.value.trim().length > 0)
+const activeConversation = computed(() => chat.activeConversation)
+const canSend = computed(() => wsConnected.value && Boolean(activeConversationID.value) && draft.value.trim().length > 0)
 const canUploadFile = computed(() => wsConnected.value && Boolean(activeConversationID.value) && !uploadingFile.value)
 
 onMounted(async () => {
-  await loadConversationList()
-  connectWebSocket()
-  startRecallNoticeExpiryTimer()
+  await chat.initialize()
+  ws.connect()
+  chat.startRecallNoticeExpiryTimer()
+  await scrollToBottom('auto')
 })
 
 onBeforeUnmount(() => {
-  socket?.close()
-  socket = null
-  if (recallNoticeTimer) {
-    window.clearInterval(recallNoticeTimer)
-    recallNoticeTimer = undefined
-  }
+  ws.disconnect()
+  chat.stopRecallNoticeExpiryTimer()
 })
 
-async function loadConversationList() {
-  loadingConversations.value = true
-  errorMessage.value = ''
-  try {
-    const result = await listConversations()
-    conversations.value = result.list
-    if (!activeConversationID.value && conversations.value.length > 0) {
-      await selectConversation(conversations.value[0].conversation_id)
-    }
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    loadingConversations.value = false
-  }
-}
-
-async function selectConversation(conversationID: string) {
-  if (activeConversationID.value === conversationID && messages.value.length > 0) {
-    return
-  }
-  activeConversationID.value = conversationID
-  messages.value = []
-  hasMore.value = false
-  await loadCurrentMessages('')
-}
-
-async function openFriendChat(friend: FriendItem) {
-  errorMessage.value = ''
-
-  let conversationID = friend.conversation_id
-  if (!conversationID) {
-    await loadConversationList()
-    conversationID = findFriendConversationID(friend.friend_user_id)
-  } else if (!conversations.value.some((item) => item.conversation_id === conversationID)) {
-    await loadConversationList()
-  }
-
-  if (!conversationID) {
-    errorMessage.value = '未找到该好友会话，请刷新会话列表后重试'
-    return
-  }
-
-  await selectConversation(conversationID)
-}
-
-function findFriendConversationID(friendUserID: string) {
-  return (
-    conversations.value.find(
-      (item) => item.conversation_type === 'private' && item.peer_user_id === friendUserID,
-    )?.conversation_id || ''
-  )
-}
-
-async function loadCurrentMessages(cursor: string) {
-  if (!activeConversationID.value) {
-    return
-  }
-  loadingMessages.value = true
-  errorMessage.value = ''
-  try {
-    const result = await listMessages(activeConversationID.value, cursor)
-    const incoming = result.list.map((item) => ({ ...item }))
-    messages.value = cursor ? [...incoming, ...messages.value] : incoming
-    mergeStoredRecallNotices(activeConversationID.value)
-    hasMore.value = result.has_more
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    loadingMessages.value = false
-  }
-}
-
-async function loadOlderMessages() {
-  const cursor = messages.value.find((message) => !message.is_recall_notice && isPersistedMessage(message))?.message_id
-  if (!cursor || loadingMessages.value) {
-    return
-  }
-  await loadCurrentMessages(cursor)
-}
-
-function connectWebSocket() {
-  const token = localStorage.getItem('access_token')
-  if (!token || socket) {
-    return
-  }
-
-  socket = new WebSocket(buildWebSocketURL(token))
-  socket.addEventListener('open', () => {
-    wsConnected.value = true
-  })
-  socket.addEventListener('close', () => {
-    wsConnected.value = false
-    socket = null
-  })
-  socket.addEventListener('message', (event) => {
-    handleEnvelope(event.data)
-  })
-}
+watch(scrollToBottomSignal, () => {
+  void scrollToBottom()
+})
 
 function sendMessage() {
-  const content = draft.value.trim()
-  if (!socket || socket.readyState !== WebSocket.OPEN || !activeConversationID.value || !content) {
+  if (!canSend.value) {
     return
   }
-
-  const clientMsgID = crypto.randomUUID()
-  const seq = crypto.randomUUID()
-  const localMessage: ChatMessage = {
-    client_msg_id: clientMsgID,
-    message_id: clientMsgID,
-    conversation_id: activeConversationID.value,
-    sender_id: auth.user?.user_id || '',
-    message_type: 'text',
-    content,
-    extra_json: {},
-    send_status: 'sending',
-    created_at: new Date().toISOString(),
+  const payload = chat.prepareTextMessage()
+  if (payload) {
+    ws.sendChatMessage(payload)
   }
-  messages.value = [...messages.value, localMessage]
-  updateConversationLastMessage(activeConversationID.value, content)
-  draft.value = ''
-
-  socket.send(
-    JSON.stringify({
-      seq,
-      type: 'chat.message.send',
-      data: {
-        conversation_id: activeConversationID.value,
-        client_msg_id: clientMsgID,
-        message_type: 'text',
-        content,
-        extra_json: {},
-      },
-      timestamp: Date.now(),
-    }),
-  )
 }
 
 function triggerFileSelect() {
@@ -265,559 +71,31 @@ async function handleFileSelected(event: Event) {
   if (!selectedFile) {
     return
   }
-
-  if (!socket || socket.readyState !== WebSocket.OPEN || !activeConversationID.value) {
+  if (!wsConnected.value) {
     errorMessage.value = 'WebSocket 未连接，暂不能发送文件'
     return
   }
-  if (selectedFile.size > maxUploadSizeBytes) {
-    errorMessage.value = `文件不能超过 ${maxUploadSizeMB}MB`
-    return
-  }
 
-  uploadingFile.value = true
-  errorMessage.value = ''
-  try {
-    const uploaded = await uploadFile(selectedFile)
-    sendUploadedFileMessage(uploaded)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  } finally {
-    uploadingFile.value = false
+  const payload = await chat.prepareUploadedFileMessage(selectedFile)
+  if (payload) {
+    ws.sendChatMessage(payload)
   }
 }
 
-function sendUploadedFileMessage(uploaded: FileUploadResult) {
-  if (!socket || socket.readyState !== WebSocket.OPEN || !activeConversationID.value) {
-    errorMessage.value = 'WebSocket 未连接，文件已上传但消息未发送'
+async function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
+  await nextTick()
+  const element = messageArea.value
+  if (!element) {
     return
   }
-
-  const clientMsgID = crypto.randomUUID()
-  const seq = crypto.randomUUID()
-  const localExtra: Record<string, unknown> = {
-    file_id: uploaded.file_id,
-    file_name: uploaded.original_name,
-    file_size: uploaded.file_size,
-    mime_type: uploaded.mime_type,
-  }
-  const localMessage: ChatMessage = {
-    client_msg_id: clientMsgID,
-    message_id: clientMsgID,
-    conversation_id: activeConversationID.value,
-    sender_id: auth.user?.user_id || '',
-    message_type: 'file',
-    content: uploaded.file_id,
-    extra_json: localExtra,
-    send_status: 'sending',
-    created_at: new Date().toISOString(),
-  }
-
-  messages.value = [...messages.value, localMessage]
-  updateConversationLastMessage(activeConversationID.value, uploaded.file_id, 'file')
-
-  socket.send(
-    JSON.stringify({
-      seq,
-      type: 'chat.message.send',
-      data: {
-        conversation_id: activeConversationID.value,
-        client_msg_id: clientMsgID,
-        message_type: 'file',
-        content: uploaded.file_id,
-      },
-      timestamp: Date.now(),
-    }),
-  )
-}
-
-function handleEnvelope(raw: string) {
-  let envelope: Envelope
-  try {
-    envelope = JSON.parse(raw) as Envelope
-  } catch {
-    return
-  }
-
-  if (envelope.type === 'chat.message.ack') {
-    applyAck(envelope.data as AckData)
-    return
-  }
-  if (envelope.type === 'chat.message.failed') {
-    applyFailed(envelope.data as FailedData)
-    return
-  }
-  if (envelope.type === 'chat.message.receive') {
-    applyReceive(envelope.data as Message)
-    return
-  }
-  if (envelope.type === 'chat.message.recalled') {
-    applyRecalled(envelope.data as RecalledData)
-  }
-}
-
-function applyAck(data: AckData) {
-  messages.value = messages.value.map((message) => {
-    if (message.client_msg_id !== data.client_msg_id) {
-      return message
-    }
-    return {
-      ...message,
-      message_id: data.message_id,
-      send_status: data.send_status,
-      created_at: data.server_time,
-      error_message: '',
-    }
+  element.scrollTo({
+    top: element.scrollHeight,
+    behavior,
   })
 }
 
-function applyFailed(data: FailedData) {
-  messages.value = messages.value.map((message) => {
-    if (message.client_msg_id !== data.client_msg_id) {
-      return message
-    }
-    return {
-      ...message,
-      message_id: data.message_id || message.message_id,
-      send_status: data.send_status,
-      created_at: data.server_time || message.created_at,
-      error_message: data.message,
-    }
-  })
-}
-
-function applyReceive(data: Message) {
-  if (data.conversation_id !== activeConversationID.value) {
-    updateConversationLastMessage(data.conversation_id, data.content, data.message_type)
-    return
-  }
-  if (messages.value.some((message) => message.message_id === data.message_id)) {
-    return
-  }
-  messages.value = [...messages.value, { ...data }]
-  updateConversationLastMessage(data.conversation_id, data.content, data.message_type)
-}
-
-function applyRecalled(data: RecalledData) {
-  if (data.conversation_id !== activeConversationID.value) {
-    return
-  }
-
-  messages.value = messages.value.filter((message) => message.message_id !== data.message_id)
-  if (data.recalled_by === auth.user?.user_id) {
-    showRecallNotice(data.message_id, data.conversation_id, '', data.recalled_at)
-  }
-}
-
-async function deleteVisibleMessage(message: ChatMessage) {
-  if (!canDelete(message)) {
-    return
-  }
-
-  errorMessage.value = ''
-  try {
-    await deleteMessage(message.conversation_id, message.message_id)
-    messages.value = messages.value.filter((item) => item.message_id !== message.message_id)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  }
-}
-
-async function clearCurrentConversation() {
-  if (!activeConversationID.value) {
-    return
-  }
-
-  errorMessage.value = ''
-  try {
-    await clearConversationMessages(activeConversationID.value)
-    removeStoredRecallNoticesByConversation(activeConversationID.value)
-    messages.value = []
-    hasMore.value = false
-    conversations.value = conversations.value.map((item) => {
-      if (item.conversation_id !== activeConversationID.value) {
-        return item
-      }
-      return {
-        ...item,
-        last_message: null,
-        unread_count: 0,
-      }
-    })
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  }
-}
-
-async function recallVisibleMessage(message: ChatMessage) {
-  if (!canRecall(message)) {
-    return
-  }
-
-  errorMessage.value = ''
-  try {
-    const result = await recallMessage(message.message_id)
-    messages.value = messages.value.filter((item) => item.message_id !== message.message_id)
-    showRecallNotice(result.message_id, message.conversation_id, result.editable_until)
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  }
-}
-
-async function reEditMessage(message: ChatMessage) {
-  const messageID = message.recalled_message_id
-  if (!messageID) {
-    return
-  }
-
-  errorMessage.value = ''
-  try {
-    const cache = await getRecallEditCache(messageID)
-    draft.value = cache.content
-  } catch (error) {
-    expireRecallNotice(messageID)
-    errorMessage.value = getErrorMessage(error)
-  }
-}
-
-function showRecallNotice(
-  messageID: string,
-  conversationID: string,
-  editableUntil: string,
-  recalledAt = new Date().toISOString(),
-) {
-  if (conversationID !== activeConversationID.value) {
-    return
-  }
-  const existingNotice = messages.value.find((message) => message.recalled_message_id === messageID)
-  const effectiveEditableUntil = editableUntil || existingNotice?.editable_until || ''
-  const effectiveRecalledAt = recalledAt || existingNotice?.created_at || new Date().toISOString()
-  const recallNotice = createRecallNoticeMessage(messageID, conversationID, effectiveRecalledAt, effectiveEditableUntil)
-
-  messages.value = sortChatMessages([
-    ...messages.value.filter((message) => message.recalled_message_id !== messageID && message.message_id !== messageID),
-    recallNotice,
-  ])
-  persistRecallNotice(messageID, conversationID, effectiveRecalledAt, effectiveEditableUntil)
-}
-
-function updateConversationLastMessage(conversationID: string, content: string, messageType: MessageType = 'text') {
-  conversations.value = conversations.value.map((item) => {
-    if (item.conversation_id !== conversationID) {
-      return item
-    }
-    return {
-      ...item,
-      last_message: {
-        content: messageType === 'file' ? '文件' : content,
-        message_type: messageType,
-        created_at: new Date().toISOString(),
-      },
-    }
-  })
-}
-
-function formatConversationLastMessage(lastMessage: Conversation['last_message']) {
-  if (!lastMessage) {
-    return '暂无消息'
-  }
-  if (lastMessage.message_type === 'file') {
-    return '文件'
-  }
-  return lastMessage.content || '暂无消息'
-}
-
-function getFileExtra(message: ChatMessage): FileMessageExtra {
-  const extra = message.extra_json || {}
-  return {
-    file_id: readString(extra.file_id),
-    file_name: readString(extra.file_name),
-    file_size: readNumber(extra.file_size),
-    mime_type: readString(extra.mime_type),
-  }
-}
-
-function getFileDisplayName(message: ChatMessage) {
-  return getFileExtra(message).file_name || '文件'
-}
-
-function getFileMetaText(message: ChatMessage) {
-  const extra = getFileExtra(message)
-  return `${formatFileSize(extra.file_size)} / ${extra.mime_type || '类型未知'}`
-}
-
-function getFileDownloadID(message: ChatMessage) {
-  const extra = getFileExtra(message)
-  return extra.file_id || message.content.trim()
-}
-
-async function downloadVisibleFile(message: ChatMessage) {
-  const fileID = getFileDownloadID(message)
-  if (!fileID) {
-    errorMessage.value = '文件信息缺失，无法下载'
-    return
-  }
-
-  errorMessage.value = ''
-  try {
-    const result = await downloadFile(fileID)
-    triggerBrowserDownload(result.blob, getFileExtra(message).file_name || result.fileName || '文件')
-  } catch (error) {
-    errorMessage.value = getErrorMessage(error)
-  }
-}
-
-function triggerBrowserDownload(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-function formatFileSize(size?: number) {
-  if (typeof size !== 'number' || !Number.isFinite(size) || size < 0) {
-    return '大小未知'
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB']
-  let value = size
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
-}
-
-function readString(value: unknown) {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
-function readNumber(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-  return undefined
-}
-
-function buildWebSocketURL(token: string) {
-  const explicitURL = import.meta.env.VITE_WS_URL
-  if (explicitURL) {
-    const separator = explicitURL.includes('?') ? '&' : '?'
-    return `${explicitURL}${separator}token=${encodeURIComponent(token)}`
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const host = import.meta.env.DEV ? 'localhost:8081' : window.location.host
-  return `${protocol}://${host}/ws?token=${encodeURIComponent(token)}`
-}
-
-function isMine(message: ChatMessage) {
-  return message.sender_id === auth.user?.user_id
-}
-
-function isFailed(message: ChatMessage) {
-  return message.send_status === 'failed' || message.send_status === 'failed_blocked'
-}
-
-function canDelete(message: ChatMessage) {
-  return !message.is_recall_notice && isPersistedMessage(message)
-}
-
-function canRecall(message: ChatMessage) {
-  return !message.is_recall_notice && isMine(message) && message.send_status === 'sent' && isPersistedMessage(message)
-}
-
-function canReEdit(message: ChatMessage) {
-  return Boolean(message.is_recall_notice && message.recalled_message_id && isBeforeEditableUntil(message.editable_until))
-}
-
-function isPersistedMessage(message: ChatMessage) {
-  return /^\d+$/.test(message.message_id)
-}
-
-function createRecallNoticeMessage(
-  messageID: string,
-  conversationID: string,
-  recalledAt: string,
-  editableUntil: string,
-): ChatMessage {
-  return {
-    client_msg_id: `recall-${messageID}`,
-    message_id: `recall-${messageID}`,
-    conversation_id: conversationID,
-    sender_id: auth.user?.user_id || '',
-    message_type: 'system',
-    content: '你撤回了一条消息',
-    extra_json: {},
-    send_status: 'sent',
-    created_at: recalledAt,
-    is_recall_notice: true,
-    recalled_message_id: messageID,
-    editable_until: editableUntil,
-  }
-}
-
-function mergeStoredRecallNotices(conversationID: string) {
-  const notices = loadStoredRecallNotices().filter((notice) => notice.conversation_id === conversationID)
-  if (notices.length === 0) {
-    return
-  }
-
-  const noticeMessages = notices.map((notice) =>
-    createRecallNoticeMessage(notice.message_id, notice.conversation_id, notice.recalled_at, notice.editable_until),
-  )
-  const noticeIDs = new Set(notices.map((notice) => notice.message_id))
-  messages.value = sortChatMessages([
-    ...messages.value.filter(
-      (message) =>
-        !noticeIDs.has(message.message_id) &&
-        (!message.recalled_message_id || !noticeIDs.has(message.recalled_message_id)),
-    ),
-    ...noticeMessages,
-  ])
-}
-
-function persistRecallNotice(messageID: string, conversationID: string, recalledAt: string, editableUntil: string) {
-  const userID = auth.user?.user_id
-  if (!userID || !editableUntil || !isBeforeEditableUntil(editableUntil)) {
-    return
-  }
-
-  const notices = loadStoredRecallNotices().filter((notice) => notice.message_id !== messageID)
-  notices.push({
-    user_id: userID,
-    conversation_id: conversationID,
-    message_id: messageID,
-    recalled_at: recalledAt,
-    editable_until: editableUntil,
-  })
-  saveStoredRecallNotices(notices)
-}
-
-function loadStoredRecallNotices() {
-  const key = recallNoticeStorageKey()
-  const userID = auth.user?.user_id
-  if (!key || !userID) {
-    return []
-  }
-
-  let parsed: StoredRecallNotice[] = []
-  try {
-    const raw = localStorage.getItem(key)
-    parsed = raw ? (JSON.parse(raw) as StoredRecallNotice[]) : []
-  } catch {
-    localStorage.removeItem(key)
-    return []
-  }
-
-  const validNotices = parsed.filter(
-    (notice) =>
-      notice.user_id === userID &&
-      notice.conversation_id &&
-      notice.message_id &&
-      notice.recalled_at &&
-      notice.editable_until &&
-      isBeforeEditableUntil(notice.editable_until),
-  )
-  if (validNotices.length !== parsed.length) {
-    saveStoredRecallNotices(validNotices)
-  }
-  return validNotices
-}
-
-function saveStoredRecallNotices(notices: StoredRecallNotice[]) {
-  const key = recallNoticeStorageKey()
-  if (!key) {
-    return
-  }
-  if (notices.length === 0) {
-    localStorage.removeItem(key)
-    return
-  }
-  localStorage.setItem(key, JSON.stringify(notices))
-}
-
-function removeStoredRecallNotice(messageID: string) {
-  saveStoredRecallNotices(loadStoredRecallNotices().filter((notice) => notice.message_id !== messageID))
-}
-
-function removeStoredRecallNoticesByConversation(conversationID: string) {
-  saveStoredRecallNotices(loadStoredRecallNotices().filter((notice) => notice.conversation_id !== conversationID))
-}
-
-function expireRecallNotice(messageID: string) {
-  removeStoredRecallNotice(messageID)
-  messages.value = messages.value.map((message) => {
-    if (message.recalled_message_id !== messageID) {
-      return message
-    }
-    return {
-      ...message,
-      editable_until: '',
-    }
-  })
-}
-
-function cleanupExpiredRecallNotices() {
-  const notices = loadStoredRecallNotices()
-  const activeNoticeIDs = new Set(notices.map((notice) => notice.message_id))
-  messages.value = messages.value.map((message) => {
-    if (!message.recalled_message_id || activeNoticeIDs.has(message.recalled_message_id)) {
-      return message
-    }
-    return {
-      ...message,
-      editable_until: '',
-    }
-  })
-}
-
-function startRecallNoticeExpiryTimer() {
-  recallNoticeTimer = window.setInterval(() => {
-    recallNoticeNow.value = Date.now()
-    cleanupExpiredRecallNotices()
-  }, 30000)
-}
-
-function sortChatMessages(items: ChatMessage[]) {
-  return [...items].sort((left, right) => parseMessageTime(left) - parseMessageTime(right))
-}
-
-function parseMessageTime(message: ChatMessage) {
-  return parseTimeValue(message.is_recall_notice ? message.created_at : message.created_at)
-}
-
-function isBeforeEditableUntil(value?: string) {
-  const editableUntil = parseTimeValue(value || '')
-  return editableUntil > recallNoticeNow.value
-}
-
-function parseTimeValue(value: string) {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return 0
-  }
-  const normalized = trimmed.includes('T') ? trimmed : trimmed.replace(' ', 'T')
-  const parsed = Date.parse(normalized)
-  return Number.isNaN(parsed) ? 0 : parsed
-}
-
-function recallNoticeStorageKey() {
-  const userID = auth.user?.user_id
-  return userID ? `${recallNoticeStoragePrefix}${userID}` : ''
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : '请求失败'
+function openFriendChat(friend: FriendItem) {
+  void chat.openFriendChat(friend)
 }
 </script>
 
@@ -834,12 +112,17 @@ function getErrorMessage(error: unknown) {
         :key="conversation.conversation_id"
         :class="['conversation-item', { active: conversation.conversation_id === activeConversationID }]"
         type="button"
-        @click="selectConversation(conversation.conversation_id)"
+        @click="chat.selectConversation(conversation.conversation_id)"
       >
         <span class="avatar">{{ conversation.title.slice(0, 1) || '#' }}</span>
         <span class="conversation-meta">
-          <strong>{{ conversation.title || '未命名会话' }}</strong>
-          <small>{{ formatConversationLastMessage(conversation.last_message) }}</small>
+          <span class="conversation-title-row">
+            <strong>{{ conversation.title || '未命名会话' }}</strong>
+            <span v-if="conversation.unread_count > 0" class="unread-badge">
+              {{ chat.formatUnreadCount(conversation.unread_count) }}
+            </span>
+          </span>
+          <small>{{ chat.formatConversationLastMessage(conversation.last_message) }}</small>
         </span>
       </button>
       <div v-if="!loadingConversations && conversations.length === 0" class="empty-text">暂无会话</div>
@@ -854,20 +137,20 @@ function getErrorMessage(error: unknown) {
             class="clear-button"
             type="button"
             :disabled="!activeConversationID || messages.length === 0"
-            @click="clearCurrentConversation"
+            @click="chat.clearCurrentConversation"
           >
             清空
           </button>
         </div>
       </header>
 
-      <div class="message-area">
+      <div ref="messageArea" class="message-area">
         <button
           v-if="hasMore"
           class="load-more"
           type="button"
           :disabled="loadingMessages"
-          @click="loadOlderMessages"
+          @click="chat.loadOlderMessages"
         >
           加载更早消息
         </button>
@@ -876,15 +159,15 @@ function getErrorMessage(error: unknown) {
         <article
           v-for="message in messages"
           :key="message.message_id"
-          :class="['message-row', { mine: isMine(message), notice: message.is_recall_notice }]"
+          :class="['message-row', { mine: chat.isMine(message), notice: message.is_recall_notice }]"
         >
           <div v-if="message.is_recall_notice" class="recall-notice">
             <span>{{ message.content }}</span>
-            <button v-if="canReEdit(message)" type="button" @click="reEditMessage(message)">重新编辑</button>
+            <button v-if="chat.canReEdit(message)" type="button" @click="chat.reEditMessage(message)">重新编辑</button>
           </div>
           <div v-else class="bubble-wrap">
             <span
-              v-if="isMine(message) && isFailed(message)"
+              v-if="chat.isMine(message) && chat.isFailed(message)"
               class="failed-mark"
               :title="message.error_message || '发送失败'"
             >
@@ -894,14 +177,14 @@ function getErrorMessage(error: unknown) {
               <div v-if="message.message_type === 'file'" class="file-card">
                 <span class="file-icon">文件</span>
                 <span class="file-info">
-                  <strong>{{ getFileDisplayName(message) }}</strong>
-                  <small>{{ getFileMetaText(message) }}</small>
+                  <strong>{{ chat.getFileDisplayName(message) }}</strong>
+                  <small>{{ chat.getFileMetaText(message) }}</small>
                 </span>
                 <button
                   class="file-download-button"
                   type="button"
-                  :disabled="!getFileDownloadID(message)"
-                  @click="downloadVisibleFile(message)"
+                  :disabled="!chat.getFileDownloadID(message)"
+                  @click="chat.downloadVisibleFile(message)"
                 >
                   下载
                 </button>
@@ -909,10 +192,10 @@ function getErrorMessage(error: unknown) {
               <p v-else>{{ message.content }}</p>
               <small>{{ message.send_status === 'sending' ? '发送中' : message.created_at }}</small>
               <div class="message-actions">
-                <button v-if="canDelete(message)" type="button" @click="deleteVisibleMessage(message)">
+                <button v-if="chat.canDelete(message)" type="button" @click="chat.deleteVisibleMessage(message)">
                   删除
                 </button>
-                <button v-if="canRecall(message)" type="button" @click="recallVisibleMessage(message)">
+                <button v-if="chat.canRecall(message)" type="button" @click="chat.recallVisibleMessage(message)">
                   撤回
                 </button>
               </div>
@@ -1022,6 +305,14 @@ function getErrorMessage(error: unknown) {
 
 .conversation-meta {
   min-width: 0;
+  flex: 1 1 auto;
+}
+
+.conversation-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .conversation-meta strong,
@@ -1032,9 +323,29 @@ function getErrorMessage(error: unknown) {
   white-space: nowrap;
 }
 
+.conversation-meta strong {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .conversation-meta small {
   margin-top: 3px;
   color: #667085;
+}
+
+.unread-badge {
+  display: grid;
+  min-width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 5px;
+  background: #d92d20;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .chat-main {

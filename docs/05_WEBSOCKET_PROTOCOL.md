@@ -272,10 +272,18 @@ chat.message.receive
     "message_type": "text",
     "content": "你好",
     "extra_json": {},
+    "send_status": "sent",
     "created_at": "2026-04-24 12:00:00"
   },
   "timestamp": 1710000001000
 }
+```
+
+字段说明：
+
+```txt
+send_status 当前单聊正常推送固定为 sent，用于前端复用统一消息模型并更新当前聊天窗口。
+前端必须使用 conversation_id 定位会话，不能使用 nickname / avatar_url 匹配会话。
 ```
 
 ## 8. 撤回消息事件

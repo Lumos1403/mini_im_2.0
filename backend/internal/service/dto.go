@@ -159,6 +159,7 @@ type MessageReceiveOutput struct {
 	MessageType    string          `json:"message_type"`
 	Content        string          `json:"content"`
 	ExtraJSON      json.RawMessage `json:"extra_json"`
+	SendStatus     string          `json:"send_status"`
 	CreatedAt      string          `json:"created_at"`
 }
 

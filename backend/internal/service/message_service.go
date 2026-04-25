@@ -558,6 +558,7 @@ func toReceiveOutput(message *model.Message) *MessageReceiveOutput {
 		MessageType:    message.MessageType,
 		Content:        message.Content.String,
 		ExtraJSON:      messageExtraJSON(message),
+		SendStatus:     message.SendStatus,
 		CreatedAt:      formatTime(message.CreatedAt),
 	}
 }

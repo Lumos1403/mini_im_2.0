@@ -260,6 +260,34 @@ POST /api/messages/{message_id}/recall
 
 Redis 缓存原消息内容 5 分钟。
 
+### Step 7.5 单聊实时接收、会话列表同步和未读提醒
+
+目标：修复在线接收方收到单聊文本消息后，当前聊天窗口、会话列表和未读数不能实时同步的问题。
+
+范围：
+
+```txt
+只处理 private text 消息的实时接收和发送状态同步
+不实现群聊
+不实现文件消息
+不修改撤回、删除、清空逻辑
+不新增 migration
+```
+
+要求：
+
+```txt
+前端 WebSocket 收到 chat.message.receive 后必须由 ws store 集中处理
+chat store 负责维护当前消息列表、会话列表、last_message、unread_count
+当前打开该 conversation_id 时，立即追加消息、按 message_id / client_msg_id 去重、触发滚动到底部，未读数清零
+未打开该 conversation_id 时，更新 last_message、unread_count，并将会话移动到顶部
+本地没有该 conversation_id 时，按 conversation_id 创建本地会话项并拉取会话列表补齐资料
+禁止按 nickname / avatar_url 匹配会话，只能使用 conversation_id 或 peer_user_id
+收到 chat.message.ack 后，将 sending 改为 sent，并用服务端 message_id 替换本地临时 message_id
+收到 chat.message.failed 后，将本地临时消息改为 failed / failed_blocked，failed_blocked 显示红色感叹号
+后端 chat.message.receive 必须包含 message_id、conversation_id、sender_id、message_type、content、send_status、created_at
+```
+
 ## 阶段 8：文件消息
 
 ### Task 8.1 文件表和本地存储

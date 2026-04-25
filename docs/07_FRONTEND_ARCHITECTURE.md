@@ -203,6 +203,27 @@ handleEvent
 reconnect
 ```
 
+当前实现要求：
+
+```txt
+WebSocket 事件处理集中在 ws store
+ws store 收到 chat.message.receive / chat.message.ack / chat.message.failed 后调用 chat store 更新状态
+页面组件不得重复注册同类 WebSocket 业务事件
+```
+
+### Step 7.5 实时消息状态同步
+
+```txt
+chat store 负责维护会话列表、当前会话、当前消息列表、消息发送状态、未读数
+chat.message.receive 使用 message_id / client_msg_id 去重
+当前打开的 conversation_id 收到新消息时追加到当前消息列表并触发滚动到底部，未读数清零
+非当前 conversation_id 收到新消息时更新 last_message、unread_count，并把该会话移动到顶部
+本地没有该 conversation_id 时，先按 conversation_id 创建本地会话项，再拉取会话列表补齐 peer_user_id 等资料
+会话定位只能使用 conversation_id 或 peer_user_id，禁止按 nickname / avatar_url 匹配
+chat.message.ack 使用服务端 message_id 替换本地临时 message_id，并将 sending 改为 sent
+chat.message.failed 将本地临时消息改为 failed / failed_blocked，failed_blocked 显示红色感叹号
+```
+
 ### friend store
 
 保存：
