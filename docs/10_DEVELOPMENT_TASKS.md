@@ -551,6 +551,21 @@ GroupMemberDrawer 或 GroupMemberModal
 GroupMemberProfileModal
 ```
 
+当前实现记录：
+
+```txt
+已新增 GroupRoleBadge、GroupMemberList、GroupMemberDrawer、GroupMemberProfileModal
+Chat.vue 群消息昵称旁使用 sender_group_role 展示群主 / 管理员 Badge
+sender_group_role 缺失时按 member 处理，不展示 Badge
+群成员入口位于群聊会话头部
+stores/group.ts 维护成员列表所属 group_id、抽屉状态、资料弹窗状态和好友申请 loading
+群成员列表加载按 group_id 覆盖，不追加
+群内添加好友复用 POST /api/friends/requests
+添加好友成功后本地更新 friendship_status = pending_sent，并刷新群成员列表同步后端状态
+friend 状态本轮只显示“已是好友”
+未修改数据库、群聊后端主链路或 WebSocket 协议
+```
+
 严格限制：
 
 ```txt
@@ -562,7 +577,7 @@ GroupMemberProfileModal
 必须使用 user_id、group_id、conversation_id
 ```
 
-实现：
+本轮不新增完整群管理 GUI：
 
 ```txt
 设置管理员

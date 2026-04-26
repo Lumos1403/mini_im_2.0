@@ -394,7 +394,9 @@ stores/group.ts
 api/group.ts
 ```
 
-本阶段仅提供创建群、搜索群号、申请入群、处理入群申请、基础成员列表、设置管理员、禁言、修改设置、解散群和进入群聊会话的验证入口。不实现完整群成员 GUI、身份 Badge、成员资料弹窗、群内添加好友按钮。
+Step 10 提供创建群、搜索群号、申请入群、处理入群申请、基础成员列表、设置管理员、禁言、修改设置、解散群和进入群聊会话的验证入口。
+
+Step 10.5 补齐群成员 GUI、身份 Badge、成员资料弹窗和群内添加好友按钮。
 
 必须支持：
 
@@ -439,6 +441,14 @@ sender_group_role = member 时，不显示特殊标识
 components/group/GroupRoleBadge.vue
 ```
 
+实现要求：
+
+```txt
+Chat.vue 只组合 GroupRoleBadge
+缺失 sender_group_role 时按 member 处理，不展示 Badge
+Badge 同时覆盖历史消息接口返回的消息和 WebSocket 实时收到的群消息
+```
+
 ### 10.2 群成员列表
 
 群聊页面需要提供查看群成员入口。
@@ -460,6 +470,15 @@ user_id
 ```txt
 components/group/GroupMemberList.vue
 components/group/GroupMemberDrawer.vue
+```
+
+实现要求：
+
+```txt
+群成员入口放在群聊会话头部
+成员列表由 stores/group.ts 统一加载
+loadMembers 必须按 group_id 覆盖列表，不能重复追加
+成员 GUI 不复用 nickname 或 avatar_url 做身份匹配
 ```
 
 排序建议：
@@ -508,15 +527,27 @@ POST /api/friends/requests
 components/group/GroupMemberProfileModal.vue
 ```
 
+实现要求：
+
+```txt
+点击头像或昵称打开资料弹窗
+添加好友按钮需要 loading 状态，避免重复点击
+添加好友成功后本地更新 friendship_status = pending_sent，并刷新成员列表同步后端状态
+friend 状态本轮显示“已是好友”，不在弹窗内额外实现发消息入口
+```
+
 ### 10.4 群成员状态管理
 
 建议在 `stores/group.ts` 中维护：
 
 ```txt
 当前群成员列表
+当前群成员列表所属 group_id
 群成员加载状态
+群成员抽屉状态
 群成员资料弹窗状态
 当前选中的群成员
+群内好友申请 loading 状态
 ```
 
 前端唯一标识必须使用：

@@ -43,16 +43,24 @@ export interface GroupJoinRequest {
   updated_at: string
 }
 
+export type GroupRole = 'owner' | 'admin' | 'member'
+export type GroupFriendshipStatus =
+  | 'self'
+  | 'friend'
+  | 'not_friend'
+  | 'pending_sent'
+  | 'pending_received'
+
 export interface GroupMember {
   user_id: string
   nickname: string
   avatar_url: string
   bio: string
-  role: 'owner' | 'admin' | 'member'
+  role: GroupRole
   mute_until: string | null
   joined_at: string
   status: string
-  friendship_status: string
+  friendship_status: GroupFriendshipStatus
 }
 
 export async function createGroup(name: string, avatarURL = ''): Promise<CreateGroupResult> {

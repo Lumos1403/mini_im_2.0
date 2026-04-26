@@ -3,13 +3,19 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { FriendItem } from '../api/friend'
+import type { GroupMember } from '../api/group'
 import FriendPanel from '../components/friend/FriendPanel.vue'
+import GroupMemberDrawer from '../components/group/GroupMemberDrawer.vue'
+import GroupMemberProfileModal from '../components/group/GroupMemberProfileModal.vue'
 import GroupPanel from '../components/group/GroupPanel.vue'
-import { useChatStore } from '../stores/chat'
+import GroupRoleBadge from '../components/group/GroupRoleBadge.vue'
+import { useChatStore, type ChatMessage } from '../stores/chat'
+import { useGroupStore } from '../stores/group'
 import { useWsStore } from '../stores/ws'
 
 const chat = useChatStore()
 const ws = useWsStore()
+const groupStore = useGroupStore()
 
 const {
   conversations,
@@ -24,11 +30,23 @@ const {
   scrollToBottomSignal,
 } = storeToRefs(chat)
 const { connected: wsConnected } = storeToRefs(ws)
+const {
+  members: groupMembers,
+  loadingMembers,
+  memberDrawerOpen,
+  memberProfileOpen,
+  selectedMember,
+  friendRequestingUserID,
+} = storeToRefs(groupStore)
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const messageArea = ref<HTMLElement | null>(null)
 
 const activeConversation = computed(() => chat.activeConversation)
+const activeGroupID = computed(() =>
+  activeConversation.value?.conversation_type === 'group' ? activeConversation.value.group_id : '',
+)
+const isGroupConversation = computed(() => Boolean(activeGroupID.value))
 const canSend = computed(() => wsConnected.value && Boolean(activeConversationID.value) && draft.value.trim().length > 0)
 const canUploadFile = computed(
   () =>
@@ -52,6 +70,17 @@ onBeforeUnmount(() => {
 
 watch(scrollToBottomSignal, () => {
   void scrollToBottom()
+})
+
+watch(activeGroupID, (groupID, oldGroupID) => {
+  if (groupID === oldGroupID || !memberDrawerOpen.value) {
+    return
+  }
+  if (!groupID) {
+    groupStore.closeMemberDrawer()
+    return
+  }
+  groupStore.openMemberDrawer(groupID)
 })
 
 function sendMessage() {
@@ -108,6 +137,38 @@ function openFriendChat(friend: FriendItem) {
 function openConversation(conversationID: string) {
   void chat.selectConversation(conversationID)
 }
+
+function openGroupMembers() {
+  if (activeGroupID.value) {
+    groupStore.openMemberDrawer(activeGroupID.value)
+  }
+}
+
+function refreshGroupMembers() {
+  if (activeGroupID.value) {
+    void groupStore.loadMembers(activeGroupID.value)
+  }
+}
+
+function openGroupMemberProfile(member: GroupMember) {
+  groupStore.openMemberProfile(member)
+}
+
+function addFriendFromGroup(member: GroupMember, message: string) {
+  if (activeGroupID.value) {
+    void groupStore.sendFriendRequestFromMember(activeGroupID.value, member.user_id, message)
+  }
+}
+
+function groupSenderName(message: ChatMessage) {
+  if (message.sender_nickname) {
+    return message.sender_nickname
+  }
+  if (chat.isMine(message)) {
+    return '我'
+  }
+  return message.sender_id
+}
 </script>
 
 <template>
@@ -141,9 +202,23 @@ function openConversation(conversationID: string) {
 
     <section class="chat-main">
       <header class="chat-header">
-        <strong>{{ activeConversation?.title || '聊天窗口' }}</strong>
+        <div class="chat-title">
+          <strong>{{ activeConversation?.title || '聊天窗口' }}</strong>
+          <small v-if="isGroupConversation && activeConversation?.group_no">
+            群号 {{ activeConversation.group_no }}
+          </small>
+        </div>
         <div class="header-actions">
           <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
+          <button
+            v-if="isGroupConversation"
+            class="member-button"
+            type="button"
+            :disabled="!activeGroupID || loadingMembers"
+            @click="openGroupMembers"
+          >
+            {{ loadingMembers ? '加载中' : '成员' }}
+          </button>
           <button
             class="clear-button"
             type="button"
@@ -186,10 +261,11 @@ function openConversation(conversationID: string) {
             </span>
             <div class="message-bubble">
               <span
-                v-if="activeConversation?.conversation_type === 'group' && !chat.isMine(message)"
+                v-if="activeConversation?.conversation_type === 'group'"
                 class="sender-line"
               >
-                {{ message.sender_nickname || message.sender_id }}
+                <span class="sender-name">{{ groupSenderName(message) }}</span>
+                <GroupRoleBadge :role="message.sender_group_role || 'member'" />
               </span>
               <div v-if="message.message_type === 'file'" class="file-card">
                 <span class="file-icon">文件</span>
@@ -245,6 +321,24 @@ function openConversation(conversationID: string) {
       <FriendPanel @open-chat="openFriendChat" />
       <GroupPanel @open-conversation="openConversation" />
     </aside>
+
+    <GroupMemberDrawer
+      :open="memberDrawerOpen"
+      :title="activeConversation?.title"
+      :members="groupMembers"
+      :loading="loadingMembers"
+      :selected-user-id="selectedMember?.user_id || ''"
+      @close="groupStore.closeMemberDrawer"
+      @refresh="refreshGroupMembers"
+      @select="openGroupMemberProfile"
+    />
+    <GroupMemberProfileModal
+      :open="memberProfileOpen"
+      :member="selectedMember"
+      :requesting="Boolean(selectedMember && friendRequestingUserID === selectedMember.user_id)"
+      @close="groupStore.closeMemberProfile"
+      @add-friend="addFriendFromGroup"
+    />
   </section>
 </template>
 
@@ -399,6 +493,24 @@ function openConversation(conversationID: string) {
   justify-content: space-between;
 }
 
+.chat-title {
+  min-width: 0;
+}
+
+.chat-title strong,
+.chat-title small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-title small {
+  margin-top: 2px;
+  color: #667085;
+  font-size: 12px;
+}
+
 .header-actions {
   display: flex;
   min-width: 0;
@@ -456,11 +568,24 @@ function openConversation(conversationID: string) {
 }
 
 .sender-line {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-bottom: 5px;
   color: #475467;
   font-size: 12px;
   font-weight: 700;
+}
+
+.sender-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-row.mine .sender-line {
+  color: rgba(255, 255, 255, 0.82);
 }
 
 .message-bubble small {
@@ -569,7 +694,8 @@ function openConversation(conversationID: string) {
 
 .message-actions button,
 .recall-notice button,
-.clear-button {
+.clear-button,
+.member-button {
   border: 0;
   border-radius: 6px;
   background: transparent;
@@ -621,7 +747,8 @@ function openConversation(conversationID: string) {
 
 .composer button,
 .load-more,
-.clear-button {
+.clear-button,
+.member-button {
   min-width: 78px;
   height: 38px;
   border: 0;
@@ -634,12 +761,14 @@ function openConversation(conversationID: string) {
 
 .composer button:disabled,
 .load-more:disabled,
-.clear-button:disabled {
+.clear-button:disabled,
+.member-button:disabled {
   background: #98a2b3;
   cursor: not-allowed;
 }
 
-.clear-button {
+.clear-button,
+.member-button {
   min-width: 64px;
   color: #ffffff;
   font-size: 13px;

@@ -17,13 +17,22 @@ import {
   type GroupInfo,
   type GroupJoinRequest,
   type GroupMember,
+  type GroupFriendshipStatus,
 } from '../api/group'
+import { createFriendRequest } from '../api/friend'
+import { getApiErrorMessage } from '../api/http'
 import { useChatStore } from './chat'
 
 interface GroupState {
   searchResults: GroupInfo[]
   joinRequests: GroupJoinRequest[]
   members: GroupMember[]
+  membersGroupID: string
+  loadingMembers: boolean
+  memberDrawerOpen: boolean
+  selectedMemberID: string
+  memberProfileOpen: boolean
+  friendRequestingUserID: string
   loading: boolean
   operating: boolean
   errorMessage: string
@@ -35,11 +44,25 @@ export const useGroupStore = defineStore('group', {
     searchResults: [],
     joinRequests: [],
     members: [],
+    membersGroupID: '',
+    loadingMembers: false,
+    memberDrawerOpen: false,
+    selectedMemberID: '',
+    memberProfileOpen: false,
+    friendRequestingUserID: '',
     loading: false,
     operating: false,
     errorMessage: '',
     noticeMessage: '',
   }),
+  getters: {
+    selectedMember(state): GroupMember | null {
+      if (!state.selectedMemberID) {
+        return null
+      }
+      return state.members.find((item) => item.user_id === state.selectedMemberID) || null
+    },
+  },
   actions: {
     async create(name: string) {
       const trimmed = name.trim()
@@ -117,22 +140,90 @@ export const useGroupStore = defineStore('group', {
       })
     },
 
-    async loadMembers(groupID: string) {
+    async loadMembers(groupID: string, options: { silent?: boolean } = {}) {
       if (!groupID) {
         this.members = []
+        this.membersGroupID = ''
         return
       }
+      if (this.membersGroupID !== groupID) {
+        this.members = []
+      }
+      this.membersGroupID = groupID
       this.loading = true
-      this.clearMessages()
+      this.loadingMembers = true
+      if (!options.silent) {
+        this.clearMessages()
+      }
       try {
         const result = await listGroupMembers(groupID)
-        this.members = result.list
+        if (this.membersGroupID === groupID) {
+          this.members = result.list
+        }
       } catch (error) {
-        this.members = []
+        if (this.membersGroupID === groupID) {
+          this.members = []
+        }
         this.errorMessage = getErrorMessage(error)
       } finally {
         this.loading = false
+        this.loadingMembers = false
       }
+    },
+
+    openMemberDrawer(groupID: string) {
+      if (!groupID) {
+        return
+      }
+      this.memberDrawerOpen = true
+      void this.loadMembers(groupID)
+    },
+
+    closeMemberDrawer() {
+      this.memberDrawerOpen = false
+      this.closeMemberProfile()
+    },
+
+    openMemberProfile(member: GroupMember) {
+      this.selectedMemberID = member.user_id
+      this.memberProfileOpen = true
+    },
+
+    closeMemberProfile() {
+      this.memberProfileOpen = false
+      this.selectedMemberID = ''
+    },
+
+    async sendFriendRequestFromMember(groupID: string, userID: string, message: string) {
+      if (!groupID || !userID || this.friendRequestingUserID === userID) {
+        return
+      }
+      this.friendRequestingUserID = userID
+      this.clearMessages()
+      try {
+        await createFriendRequest(userID, message.trim())
+        this.updateMemberFriendshipStatus(userID, 'pending_sent')
+        this.noticeMessage = '好友申请已发送'
+        await this.loadMembers(groupID, { silent: true })
+      } catch (error) {
+        this.errorMessage = getErrorMessage(error)
+        await this.loadMembers(groupID, { silent: true })
+      } finally {
+        if (this.friendRequestingUserID === userID) {
+          this.friendRequestingUserID = ''
+        }
+      }
+    },
+
+    updateMemberFriendshipStatus(userID: string, status: GroupFriendshipStatus) {
+      this.members = this.members.map((member) =>
+        member.user_id === userID
+          ? {
+              ...member,
+              friendship_status: status,
+            }
+          : member,
+      )
     },
 
     async setAdmin(groupID: string, userID: string) {
@@ -212,5 +303,5 @@ function formatBackendTime(value: Date) {
 }
 
 function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Request failed'
+  return getApiErrorMessage(error)
 }
