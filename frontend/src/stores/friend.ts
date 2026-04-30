@@ -4,6 +4,7 @@ import * as friendApi from '../api/friend'
 import { getApiErrorMessage } from '../api/http'
 import { searchUsers, type UserSearchResult } from '../api/user'
 import type { FriendItem, FriendRequest } from '../api/friend'
+import { useChatStore } from './chat'
 
 interface FriendState {
   friends: FriendItem[]
@@ -121,12 +122,15 @@ export const useFriendStore = defineStore('friend', {
         this.operating = false
       }
     },
-    async removeFriend(userID: string) {
+    async removeFriend(userID: string, conversationID = '') {
       this.operating = true
       this.clearMessages()
       try {
         await friendApi.deleteFriend(userID)
-        await this.loadFriends()
+        const chat = useChatStore()
+        chat.removeConversation(conversationID)
+        chat.removePrivateConversationByPeer(userID)
+        await Promise.all([this.loadFriends(), chat.loadConversationList(false)])
         this.noticeMessage = '好友已删除'
       } catch (error) {
         this.errorMessage = getApiErrorMessage(error)

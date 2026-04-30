@@ -129,6 +129,13 @@ function dissolveGroup() {
   void groupStore.dissolve(activeGroupID.value)
 }
 
+function leaveGroup() {
+  if (!activeGroupID.value || !window.confirm('Leave this group?')) {
+    return
+  }
+  void groupStore.leave(activeGroupID.value)
+}
+
 function displayName(member: GroupMember) {
   return member.nickname || member.user_id
 }
@@ -222,6 +229,14 @@ function canMute(member: GroupMember) {
           @click="dissolveGroup"
         >
           Dissolve
+        </button>
+        <button
+          class="danger-button"
+          type="button"
+          :disabled="operating || currentRole === 'owner'"
+          @click="leaveGroup"
+        >
+          Leave
         </button>
 
         <h3>Join Requests</h3>

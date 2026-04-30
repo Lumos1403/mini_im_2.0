@@ -32,6 +32,7 @@ func (h *GroupHandler) Register(group *gin.RouterGroup, authMiddleware gin.Handl
 	groups.POST("/:group_id/members/:user_id/mute", h.MuteMember)
 	groups.DELETE("/:group_id/members/:user_id/mute", h.UnmuteMember)
 	groups.PUT("/:group_id/settings", h.UpdateSettings)
+	groups.POST("/:group_id/leave", h.LeaveGroup)
 	groups.DELETE("/:group_id", h.DissolveGroup)
 }
 
@@ -214,6 +215,18 @@ func (h *GroupHandler) DissolveGroup(ctx *gin.Context) {
 		return
 	}
 	if appErr := h.groupService.DissolveGroup(ctx.Request.Context(), userID, ctx.Param("group_id")); appErr != nil {
+		response.Fail(ctx, apperrors.HTTPStatus(appErr), appErr)
+		return
+	}
+	response.Success(ctx, gin.H{})
+}
+
+func (h *GroupHandler) LeaveGroup(ctx *gin.Context) {
+	userID, ok := currentUserID(ctx)
+	if !ok {
+		return
+	}
+	if appErr := h.groupService.LeaveGroup(ctx.Request.Context(), userID, ctx.Param("group_id")); appErr != nil {
 		response.Fail(ctx, apperrors.HTTPStatus(appErr), appErr)
 		return
 	}

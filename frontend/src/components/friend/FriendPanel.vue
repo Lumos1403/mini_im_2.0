@@ -67,7 +67,7 @@ async function deleteFriend(item: FriendItem) {
   if (!window.confirm(`确定删除好友 ${friendDisplayName(item)} 吗？`)) {
     return
   }
-  await friendStore.removeFriend(item.friend_user_id)
+  await friendStore.removeFriend(item.friend_user_id, item.conversation_id)
 }
 
 async function blockFriend(item: FriendItem) {

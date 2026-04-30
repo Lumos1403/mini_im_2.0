@@ -5,6 +5,7 @@ import {
   createGroup,
   createJoinRequest,
   dissolveGroup,
+  leaveGroup,
   listGroupMembers,
   listJoinRequests,
   muteGroupMember,
@@ -274,6 +275,20 @@ export const useGroupStore = defineStore('group', {
         await dissolveGroup(groupID)
         this.noticeMessage = 'Group dissolved'
         await useChatStore().loadConversationList(false)
+      })
+    },
+
+    async leave(groupID: string) {
+      await this.withOperation(async () => {
+        await leaveGroup(groupID)
+        const chat = useChatStore()
+        chat.removeGroupConversationByGroupID(groupID)
+        this.members = []
+        this.membersGroupID = ''
+        this.joinRequests = []
+        this.closeMemberDrawer()
+        this.noticeMessage = '已退出群聊'
+        await chat.loadConversationList(false)
       })
     },
 

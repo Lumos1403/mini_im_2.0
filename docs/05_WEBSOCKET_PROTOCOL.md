@@ -365,13 +365,15 @@ friend.request.accepted
 friend.deleted
 ```
 
+当前 Step 10.6 不依赖该事件刷新页面，也不再向旧 private conversation 写入 system message。
+删除好友后的当前操作者提示由 HTTP 操作成功后的前端 toast 和状态刷新完成。
+如后续实现该事件，只能用于通知客户端刷新好友列表 / 会话列表，不能用于恢复旧 conversation 或写入旧会话消息。
+
 ```json
 {
   "type": "friend.deleted",
   "data": {
-    "from_user_id": "123",
-    "conversation_id": "111",
-    "notice": "对方已将你删除"
+    "from_user_id": "123"
   }
 }
 ```

@@ -72,7 +72,7 @@ func main() {
 	authService := service.NewAuthService(userRepo, tokenRepo, tokenManager, idGenerator, agentService)
 	userService := service.NewUserService(userRepo)
 	conversationService := service.NewConversationService(conversationRepo)
-	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator, nil)
+	friendService := service.NewFriendService(userRepo, friendRepo, conversationRepo, idGenerator)
 	groupService := service.NewGroupService(groupRepo, idGenerator, cfg.IM.GroupMaxMembers)
 	fileService := service.NewFileService(fileRepo, fileStorage, idGenerator, cfg.File.MaxSizeMB)
 	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, fileRepo, groupRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)

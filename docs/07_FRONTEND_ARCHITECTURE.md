@@ -255,6 +255,28 @@ unblock
 好友列表拉黑状态以后端 is_blocked_by_me 为准。
 打开好友聊天时优先使用好友列表返回的 conversation_id。
 缺少 conversation_id 时只能使用会话列表的 peer_user_id 兜底匹配，不允许按 nickname 或 avatar_url 匹配。
+删除好友成功后，前端必须立即从好友列表和会话列表移除对应 private conversation；如果当前正在打开该会话，清空当前聊天窗口并切换为无选中状态。
+删除好友成功后必须重新拉取好友列表和会话列表兜底同步，不依赖旧 conversation system message。
+```
+
+### group store
+
+保存：
+
+```txt
+群搜索结果
+入群申请
+群成员列表
+群成员抽屉和资料弹窗状态
+群操作 loading / error / notice 状态
+```
+
+说明：
+
+```txt
+退出群聊成功后，前端必须立即从会话列表移除对应 group conversation；如果当前正在打开该群会话，清空当前聊天窗口并切换为无选中状态。
+退出群聊成功后必须重新拉取会话列表兜底同步。
+本轮只提供最小退出入口，不重构右侧群功能栏。
 ```
 
 ## 4. HTTP 请求封装

@@ -466,9 +466,17 @@ is_blocked_by_me 表示当前登录用户是否已单向拉黑该好友。
 DELETE /api/friends/{user_id}
 ```
 
-删除后双方好友关系失效，对方会话中显示系统提示。
+删除后双方好友关系失效，两人之间的旧 private conversation 从双方会话列表移除。
 
-当前实现预留 system message 创建入口，消息表和 WebSocket 推送在后续阶段实现。
+规则：
+
+```txt
+删除好友必须在同一事务内处理好友关系和旧 private conversation 生命周期。
+删除好友后不向旧 private conversation 写入 system message。
+删除好友后双方不能读取、搜索或继续发送到旧 private conversation。
+重新添加好友后创建新的空白 private conversation，旧消息不能恢复。
+前端操作成功后通过 toast / 状态刷新提示用户，不依赖旧会话 system message。
+```
 
 ### 5.7 拉黑好友
 
@@ -534,6 +542,9 @@ cursor 基于雪花 message_id
 必须过滤当前用户已删除、已清空、已撤回消息
 必须过滤全局删除消息
 必须过滤当前用户没有 message_user_states 的消息
+private 会话必须要求当前用户仍是 active 成员
+group 会话必须要求当前用户仍是 active 群成员
+group 会话重新入群后只返回当前 membership joined_at 之后的消息
 limit 默认 30，最大 100
 ```
 
@@ -739,6 +750,9 @@ GET /api/search/messages?keyword=你好&page=1&page_size=20
 清空时间前消息
 已撤回消息
 不属于当前用户会话的消息
+删除好友后已清理的旧 private 会话消息
+退出群聊后当前用户不可见的群消息
+重新入群前产生的群消息
 ```
 
 ### 9.2 搜索文件
@@ -920,7 +934,25 @@ DELETE /api/groups/{group_id}
 
 仅群主。
 
-### 10.14 群消息历史字段补充
+### 10.14 退出群聊
+
+```txt
+POST /api/groups/{group_id}/leave
+```
+
+规则：
+
+```txt
+当前用户必须是该群 active 成员。
+群主不能通过普通退出接口退出群聊；当前没有群主转让能力时，群主只能解散群聊。
+管理员和普通成员可以退出群聊。
+退出群聊只影响当前用户，不删除 groups、不删除其他 group_members、不删除 messages。
+退出后当前用户的群会话从会话列表移除，不能读取该群历史消息，不能继续发送该群消息。
+重新入群时必须更新 group_members.joined_at 和 conversation_members.joined_at 为本次入群时间。
+重新入群后只读取本次 joined_at 之后的新消息。
+```
+
+### 10.15 群消息历史字段补充
 
 获取会话消息接口 `GET /api/conversations/{conversation_id}/messages` 在 conversation_type = group 时，消息项需要额外返回：
 
@@ -949,7 +981,7 @@ member 不展示特殊标识
 群消息实时推送和历史消息均返回 sender_nickname、sender_avatar_url、sender_group_role。
 ```
 
-### 10.15 群内添加好友
+### 10.16 群内添加好友
 
 群成员资料弹窗中的添加好友功能必须复用已有好友申请接口：
 

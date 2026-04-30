@@ -151,7 +151,7 @@ GET /api/friends
 
 ### Task 3.5 删除好友
 
-删除后双方好友列表移除，对方收到系统提示事件。
+删除后双方好友列表移除，对应 private conversation 从双方会话列表移除，旧单聊历史不可读取、不可搜索，重新添加好友后从空白会话开始。
 
 ### Task 3.6 拉黑与解除拉黑
 
@@ -335,6 +335,7 @@ GET /api/search/files
 ```txt
 Step 10    群聊基础功能
 Step 10.5  群聊成员 GUI 和身份标识
+Step 10.6  关系变更后的会话生命周期修复
 ```
 
 ### Step 10：群聊基础功能
@@ -584,6 +585,32 @@ friend 状态本轮只显示“已是好友”
 禁言
 允许成员邀请
 解散群聊
+```
+
+### Step 10.6：关系变更后的会话生命周期修复
+
+目标：修复删除好友、退出群聊后旧会话和旧历史仍可见的数据一致性问题。
+
+范围：
+
+```txt
+删除好友时同步处理旧 private conversation 生命周期
+好友重新添加时创建新的空白 private conversation
+新增普通成员退出群聊接口 POST /api/groups/{group_id}/leave
+退出群聊后仅影响当前用户 membership 和会话状态
+历史消息和文件下载补充 active membership / joined_at 可见性过滤
+前端只做删除好友、退出群聊后的最小状态刷新
+```
+
+规则：
+
+```txt
+删除好友不再向旧 private conversation 写入 system message
+删除好友后旧 private conversation 相关 messages / message_user_states / conversation_user_states / conversation_members / conversations 可物理删除
+退出群聊不能删除 groups、其他 group_members 或群 messages
+重新入群必须更新 group_members.joined_at 和 conversation_members.joined_at 为本次入群时间
+重新入群后只能读取本次 joined_at 之后产生的新消息
+当前操作者前端必须立即移除对应会话，并重新拉取会话列表兜底
 ```
 
 ## 阶段 11：前端完整界面

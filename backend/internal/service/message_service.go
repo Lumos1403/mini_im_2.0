@@ -293,6 +293,21 @@ func (s *MessageService) ListConversationMessages(ctx context.Context, userID in
 	if err != nil {
 		return nil, apperrors.ErrInternal
 	}
+	if conversation.ConversationType == model.ConversationTypeGroup {
+		if s.groupRepo == nil || !conversation.RefID.Valid {
+			return nil, apperrors.ErrMessageAccessDenied
+		}
+		groupCtx, err := s.groupRepo.FindMessageContextByConversation(ctx, conversationID, userID)
+		if err != nil {
+			if errors.Is(err, mysqlrepo.ErrGroupMemberNotFound) {
+				return nil, apperrors.ErrMessageAccessDenied
+			}
+			return nil, apperrors.ErrInternal
+		}
+		if groupCtx.Group.Status != model.GroupStatusNormal || groupCtx.Member.Status != model.GroupMemberStatusActive {
+			return nil, apperrors.ErrMessageAccessDenied
+		}
+	}
 
 	messages, err := s.messageRepo.ListVisibleConversationMessages(ctx, userID, conversationID, cursor, limit)
 	if err != nil {

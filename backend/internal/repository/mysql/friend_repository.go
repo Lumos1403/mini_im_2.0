@@ -294,7 +294,13 @@ LIMIT ? OFFSET ?
 
 func (r *FriendRepository) DeleteFriend(ctx context.Context, userID1 int64, userID2 int64) error {
 	left, right := orderedFriendPair(userID1, userID2)
-	result, err := r.db.ExecContext(ctx, `
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
 UPDATE friendships
 SET status = ?
 WHERE user_id_1 = ? AND user_id_2 = ? AND status = ?
@@ -309,7 +315,11 @@ WHERE user_id_1 = ? AND user_id_2 = ? AND status = ?
 	if affected == 0 {
 		return ErrFriendshipNotFound
 	}
-	return nil
+
+	if err := deletePrivateConversationsBetweenInTx(ctx, tx, userID1, userID2); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *FriendRepository) BlockUser(ctx context.Context, blockerID int64, blockedID int64) error {

@@ -77,6 +77,38 @@ WHERE conversation_id = ?
 	return existingConversationID, nil
 }
 
+func (r *ConversationRepository) CreateFreshPrivateConversationInTx(ctx context.Context, exec Executor, conversationID int64, userID1 int64, userID2 int64) (int64, error) {
+	if userID1 <= 0 || userID2 <= 0 || userID1 == userID2 || conversationID <= 0 {
+		return 0, ErrConversationNotFound
+	}
+
+	if err := deletePrivateConversationsBetweenInTx(ctx, exec, userID1, userID2); err != nil {
+		return 0, err
+	}
+
+	if _, err := exec.ExecContext(ctx, `
+INSERT INTO conversations (conversation_id, conversation_type, status)
+VALUES (?, ?, ?)
+`, conversationID, model.ConversationTypePrivate, model.ConversationStatusNormal); err != nil {
+		return 0, err
+	}
+
+	if err := upsertConversationMember(ctx, exec, conversationID, userID1); err != nil {
+		return 0, err
+	}
+	if err := upsertConversationMember(ctx, exec, conversationID, userID2); err != nil {
+		return 0, err
+	}
+	if err := upsertConversationUserState(ctx, exec, conversationID, userID1); err != nil {
+		return 0, err
+	}
+	if err := upsertConversationUserState(ctx, exec, conversationID, userID2); err != nil {
+		return 0, err
+	}
+
+	return conversationID, nil
+}
+
 func (r *ConversationRepository) ListUserConversations(ctx context.Context, userID int64, limit int, offset int) ([]model.ConversationListItem, int64, error) {
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `
@@ -84,10 +116,44 @@ SELECT COUNT(*)
 FROM conversations c
 INNER JOIN conversation_user_states s ON s.conversation_id = c.conversation_id AND s.user_id = ?
 INNER JOIN conversation_members self_cm ON self_cm.conversation_id = c.conversation_id AND self_cm.user_id = ?
+LEFT JOIN `+"`groups`"+` g
+  ON g.conversation_id = c.conversation_id
+  AND c.conversation_type = ?
 WHERE c.status = ?
   AND s.is_deleted = 0
   AND self_cm.status = ?
-`, userID, userID, model.ConversationStatusNormal, model.ConversationMemberStatusActive).Scan(&total); err != nil {
+  AND (
+    c.conversation_type <> ?
+    OR EXISTS (
+      SELECT 1
+      FROM conversation_members peer_cm
+      INNER JOIN friendships f
+        ON f.user_id_1 = LEAST(?, peer_cm.user_id)
+        AND f.user_id_2 = GREATEST(?, peer_cm.user_id)
+        AND f.status = ?
+      WHERE peer_cm.conversation_id = c.conversation_id
+        AND peer_cm.user_id <> ?
+        AND peer_cm.status = ?
+      LIMIT 1
+    )
+  )
+  AND (
+    c.conversation_type <> ?
+    OR (
+      g.status = ?
+      AND EXISTS (
+        SELECT 1
+        FROM group_members gm
+        WHERE gm.group_id = g.group_id
+          AND gm.user_id = ?
+          AND gm.status = ?
+        LIMIT 1
+      )
+    )
+  )
+`, userID, userID, model.ConversationTypeGroup, model.ConversationStatusNormal, model.ConversationMemberStatusActive,
+		model.ConversationTypePrivate, userID, userID, model.FriendshipStatusNormal, userID, model.ConversationMemberStatusActive,
+		model.ConversationTypeGroup, model.GroupStatusNormal, userID, model.GroupMemberStatusActive).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	if total == 0 {
@@ -116,9 +182,40 @@ LEFT JOIN `+"`groups`"+` g
 WHERE c.status = ?
   AND s.is_deleted = 0
   AND self_cm.status = ?
+  AND (
+    c.conversation_type <> ?
+    OR EXISTS (
+      SELECT 1
+      FROM conversation_members private_peer_cm
+      INNER JOIN friendships f
+        ON f.user_id_1 = LEAST(?, private_peer_cm.user_id)
+        AND f.user_id_2 = GREATEST(?, private_peer_cm.user_id)
+        AND f.status = ?
+      WHERE private_peer_cm.conversation_id = c.conversation_id
+        AND private_peer_cm.user_id <> ?
+        AND private_peer_cm.status = ?
+      LIMIT 1
+    )
+  )
+  AND (
+    c.conversation_type <> ?
+    OR (
+      g.status = ?
+      AND EXISTS (
+        SELECT 1
+        FROM group_members gm
+        WHERE gm.group_id = g.group_id
+          AND gm.user_id = ?
+          AND gm.status = ?
+        LIMIT 1
+      )
+    )
+  )
 ORDER BY s.is_pinned DESC, COALESCE(c.last_message_at, c.updated_at) DESC, c.updated_at DESC
 LIMIT ? OFFSET ?
-`, userID, userID, userID, model.ConversationTypePrivate, model.ConversationTypeGroup, model.ConversationStatusNormal, model.ConversationMemberStatusActive, limit, offset)
+`, userID, userID, userID, model.ConversationTypePrivate, model.ConversationTypeGroup, model.ConversationStatusNormal, model.ConversationMemberStatusActive,
+		model.ConversationTypePrivate, userID, userID, model.FriendshipStatusNormal, userID, model.ConversationMemberStatusActive,
+		model.ConversationTypeGroup, model.GroupStatusNormal, userID, model.GroupMemberStatusActive, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -271,6 +368,72 @@ FOR UPDATE
 		return 0, err
 	}
 	return conversationID, nil
+}
+
+func deletePrivateConversationsBetweenInTx(ctx context.Context, exec Executor, userID1 int64, userID2 int64) error {
+	rows, err := exec.QueryContext(ctx, `
+SELECT DISTINCT c.conversation_id
+FROM conversations c
+INNER JOIN conversation_members cm1 ON cm1.conversation_id = c.conversation_id AND cm1.user_id = ?
+INNER JOIN conversation_members cm2 ON cm2.conversation_id = c.conversation_id AND cm2.user_id = ?
+WHERE c.conversation_type = ?
+FOR UPDATE
+`, userID1, userID2, model.ConversationTypePrivate)
+	if err != nil {
+		return err
+	}
+
+	conversationIDs := make([]int64, 0)
+	for rows.Next() {
+		var conversationID int64
+		if err := rows.Scan(&conversationID); err != nil {
+			rows.Close()
+			return err
+		}
+		conversationIDs = append(conversationIDs, conversationID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, conversationID := range conversationIDs {
+		if _, err := exec.ExecContext(ctx, `
+DELETE mus
+FROM message_user_states mus
+INNER JOIN messages m ON m.message_id = mus.message_id
+WHERE m.conversation_id = ?
+`, conversationID); err != nil {
+			return err
+		}
+		if _, err := exec.ExecContext(ctx, `
+DELETE FROM messages
+WHERE conversation_id = ?
+`, conversationID); err != nil {
+			return err
+		}
+		if _, err := exec.ExecContext(ctx, `
+DELETE FROM conversation_user_states
+WHERE conversation_id = ?
+`, conversationID); err != nil {
+			return err
+		}
+		if _, err := exec.ExecContext(ctx, `
+DELETE FROM conversation_members
+WHERE conversation_id = ?
+`, conversationID); err != nil {
+			return err
+		}
+		if _, err := exec.ExecContext(ctx, `
+DELETE FROM conversations
+WHERE conversation_id = ?
+  AND conversation_type = ?
+`, conversationID, model.ConversationTypePrivate); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func upsertConversationMember(ctx context.Context, exec Executor, conversationID int64, userID int64) error {

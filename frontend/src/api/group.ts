@@ -160,3 +160,8 @@ export async function dissolveGroup(groupID: string): Promise<void> {
   const { data } = await http.delete<ApiResponse<Record<string, never>>>(`/api/groups/${groupID}`)
   unwrap(data)
 }
+
+export async function leaveGroup(groupID: string): Promise<void> {
+  const { data } = await http.post<ApiResponse<Record<string, never>>>(`/api/groups/${groupID}/leave`)
+  unwrap(data)
+}

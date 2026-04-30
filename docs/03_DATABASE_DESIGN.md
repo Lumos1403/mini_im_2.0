@@ -297,7 +297,14 @@ CREATE TABLE conversation_user_states (
 
 用途：记录某个用户在某个会话中的状态，例如清空时间、未读数、置顶、免打扰。
 
-当前实现：对应 `backend/migrations/003_create_conversation_system.sql`，本阶段先用于 private 会话创建、恢复和会话列表查询；group 会话仅保留表结构扩展能力。
+当前实现：对应 `backend/migrations/003_create_conversation_system.sql`。private 会话用于好友单聊；group 会话用于群聊。`conversation_members.status` 和 `conversation_user_states.is_deleted` 同时参与会话列表可见性过滤。
+
+关系变更规则：
+
+```txt
+删除好友时，双方之间的旧 private conversation 及其 messages / message_user_states / conversation_user_states / conversation_members 会在同一事务内物理删除。
+退出群聊时，只将当前用户的 group_members 和 conversation_members 标记为 left，并将当前用户的 conversation_user_states.is_deleted 置为 1，不删除群聊和群消息。
+```
 
 ### 4.9 messages 消息主表
 
@@ -400,6 +407,15 @@ CREATE TABLE group_members (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
+说明：
+
+```txt
+status = active 表示当前有效成员。
+status = left 表示用户已退出群聊。
+用户重新入群时必须更新 group_members.joined_at 为本次入群时间，left_at 清空。
+群消息历史查询以当前 active membership 的 joined_at 作为可见起点。
+```
+
 ### 4.13 group_join_requests 入群申请表
 
 ```sql
@@ -461,6 +477,9 @@ CREATE TABLE files (
 
 ```txt
 用户不是该会话成员的消息
+private 会话已因删除好友被清理或当前用户不再是 active 成员的消息
+群聊中当前用户不是 active 群成员的消息
+群聊中早于当前用户本次 joined_at 的消息
 当前用户没有 message_user_states 的消息
 messages.recalled_at IS NOT NULL 的消息
 messages.is_deleted_all = 1 的消息
@@ -481,6 +500,9 @@ send_status = failed_blocked，仅发送方可见
 
 ```txt
 不是当前用户所在会话的消息
+删除好友后已清理的旧 private 会话消息
+退出群聊后当前用户不可见的群消息
+重新入群前产生的群消息
 已撤回消息
 当前用户已删除消息
 当前用户清空时间之前的消息

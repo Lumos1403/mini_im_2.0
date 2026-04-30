@@ -190,7 +190,22 @@ LIMIT 1
 }
 
 func (r *MessageRepository) ListVisibleConversationMessages(ctx context.Context, userID int64, conversationID int64, cursor int64, limit int) ([]model.Message, error) {
-	args := []any{userID, userID, userID, conversationID, model.MessageSendStatusSent, model.MessageSendStatusFailedBlocked}
+	args := []any{
+		model.ConversationStatusNormal,
+		userID, model.ConversationMemberStatusActive,
+		userID,
+		userID,
+		model.ConversationTypeGroup,
+		userID,
+		conversationID,
+		model.MessageSendStatusSent,
+		model.MessageSendStatusFailedBlocked,
+		model.MessageSendStatusFailedBlocked,
+		userID,
+		model.ConversationTypeGroup,
+		model.GroupStatusNormal,
+		model.GroupMemberStatusActive,
+	}
 	cursorClause := ""
 	if cursor > 0 {
 		cursorClause = "  AND m.message_id < ?\n"
@@ -204,10 +219,13 @@ SELECT
   m.message_type, m.content, m.extra_json, m.send_status, m.created_at, m.updated_at,
   m.recalled_at, m.recalled_by, m.is_deleted_all
 FROM messages m
+INNER JOIN conversations c
+  ON c.conversation_id = m.conversation_id
+  AND c.status = ?
 INNER JOIN conversation_members cm
   ON cm.conversation_id = m.conversation_id
   AND cm.user_id = ?
-  AND cm.status = 'active'
+  AND cm.status = ?
 INNER JOIN conversation_user_states cus
   ON cus.conversation_id = m.conversation_id
   AND cus.user_id = ?
@@ -215,11 +233,26 @@ INNER JOIN message_user_states mus
   ON mus.message_id = m.message_id
   AND mus.user_id = ?
   AND mus.is_deleted = 0
+LEFT JOIN `+"`groups`"+` g
+  ON g.conversation_id = m.conversation_id
+  AND c.conversation_type = ?
+LEFT JOIN group_members gm
+  ON gm.group_id = g.group_id
+  AND gm.user_id = ?
 WHERE m.conversation_id = ?
   AND m.send_status IN (?, ?)
+  AND (m.send_status <> ? OR m.sender_id = ?)
   AND m.recalled_at IS NULL
   AND m.is_deleted_all = 0
   AND (cus.cleared_at IS NULL OR m.created_at > cus.cleared_at)
+  AND (
+    c.conversation_type <> ?
+    OR (
+      g.status = ?
+      AND gm.status = ?
+      AND m.created_at >= gm.joined_at
+    )
+  )
 `+cursorClause+`ORDER BY m.message_id DESC
 LIMIT ?
 `, args...)

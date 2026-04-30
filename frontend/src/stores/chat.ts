@@ -121,6 +121,12 @@ export const useChatStore = defineStore('chat', {
       try {
         const result = await listConversations()
         this.conversations = result.list
+        if (
+          this.activeConversationID &&
+          !this.conversations.some((item) => item.conversation_id === this.activeConversationID)
+        ) {
+          this.resetActiveConversation()
+        }
         if (autoSelect && !this.activeConversationID && this.conversations.length > 0) {
           await this.selectConversation(this.conversations[0].conversation_id)
         }
@@ -171,6 +177,48 @@ export const useChatStore = defineStore('chat', {
           (item) => item.conversation_type === 'private' && item.peer_user_id === friendUserID,
         )?.conversation_id || ''
       )
+    },
+
+    removeConversation(conversationID: string) {
+      if (!conversationID) {
+        return
+      }
+      this.conversations = this.conversations.filter((item) => item.conversation_id !== conversationID)
+      if (this.activeConversationID === conversationID) {
+        this.resetActiveConversation()
+      }
+      this.removeStoredRecallNoticesByConversation(conversationID)
+    },
+
+    removePrivateConversationByPeer(peerUserID: string) {
+      if (!peerUserID) {
+        return
+      }
+      const conversationIDs = this.conversations
+        .filter((item) => item.conversation_type === 'private' && item.peer_user_id === peerUserID)
+        .map((item) => item.conversation_id)
+      conversationIDs.forEach((conversationID) => this.removeConversation(conversationID))
+    },
+
+    removeGroupConversationByGroupID(groupID: string) {
+      if (!groupID) {
+        return
+      }
+      const conversationIDs = this.conversations
+        .filter((item) => item.conversation_type === 'group' && item.group_id === groupID)
+        .map((item) => item.conversation_id)
+      conversationIDs.forEach((conversationID) => this.removeConversation(conversationID))
+    },
+
+    resetActiveConversation() {
+      const previousConversationID = this.activeConversationID
+      this.activeConversationID = ''
+      this.messages = []
+      this.draft = ''
+      this.hasMore = false
+      if (previousConversationID) {
+        this.removeStoredRecallNoticesByConversation(previousConversationID)
+      }
     },
 
     async loadCurrentMessages(cursor: string) {

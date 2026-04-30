@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	"mini_im/backend/internal/model"
 )
@@ -19,6 +20,7 @@ var (
 	ErrGroupDissolved           = errors.New("group dissolved")
 	ErrGroupMemberNotFound      = errors.New("group member not found")
 	ErrGroupMemberMuted         = errors.New("group member muted")
+	ErrGroupOwnerCannotLeave    = errors.New("group owner cannot leave")
 	ErrDuplicateGroupNo         = errors.New("duplicate group no")
 )
 
@@ -555,6 +557,72 @@ WHERE group_id = ? AND status = ?
 	return tx.Commit()
 }
 
+func (r *GroupRepository) Leave(ctx context.Context, groupID int64, userID int64) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	group, err := findGroupByIDForUpdate(ctx, tx, groupID)
+	if err != nil {
+		return err
+	}
+	if group.Status != model.GroupStatusNormal {
+		return ErrGroupDissolved
+	}
+
+	member, err := findGroupMemberForUpdate(ctx, tx, groupID, userID)
+	if err != nil {
+		return err
+	}
+	if member.Status != model.GroupMemberStatusActive {
+		return ErrGroupMemberNotFound
+	}
+	if member.Role == model.GroupRoleOwner {
+		return ErrGroupOwnerCannotLeave
+	}
+
+	leftAt := time.Now()
+	if _, err := tx.ExecContext(ctx, `
+UPDATE group_members
+SET status = ?,
+    mute_until = NULL,
+    left_at = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE group_id = ?
+  AND user_id = ?
+  AND status = ?
+`, model.GroupMemberStatusLeft, leftAt, groupID, userID, model.GroupMemberStatusActive); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE conversation_members
+SET status = ?,
+    left_at = ?
+WHERE conversation_id = ?
+  AND user_id = ?
+  AND status = ?
+`, model.ConversationMemberStatusLeft, leftAt, group.ConversationID, userID, model.ConversationMemberStatusActive); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+UPDATE conversation_user_states
+SET is_deleted = 1,
+    cleared_at = ?,
+    unread_count = 0,
+    updated_at = CURRENT_TIMESTAMP
+WHERE conversation_id = ?
+  AND user_id = ?
+`, leftAt, group.ConversationID, userID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (r *GroupRepository) CountActiveMembers(ctx context.Context, groupID int64) (int, error) {
 	return countActiveGroupMembers(ctx, r.db, groupID)
 }
@@ -791,18 +859,18 @@ WHERE group_id = ? AND status = ?
 
 func upsertGroupMember(ctx context.Context, exec Executor, groupID int64, userID int64, role string) error {
 	_, err := exec.ExecContext(ctx, `
-INSERT INTO group_members (group_id, user_id, role, status, mute_until, left_at)
-VALUES (?, ?, ?, ?, NULL, NULL)
-ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), mute_until = NULL, left_at = NULL, updated_at = CURRENT_TIMESTAMP
+INSERT INTO group_members (group_id, user_id, role, status, mute_until, joined_at, left_at)
+VALUES (?, ?, ?, ?, NULL, CURRENT_TIMESTAMP, NULL)
+ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), mute_until = NULL, joined_at = CURRENT_TIMESTAMP, left_at = NULL, updated_at = CURRENT_TIMESTAMP
 `, groupID, userID, role, model.GroupMemberStatusActive)
 	return err
 }
 
 func upsertConversationMemberWithRole(ctx context.Context, exec Executor, conversationID int64, userID int64, role string) error {
 	_, err := exec.ExecContext(ctx, `
-INSERT INTO conversation_members (conversation_id, user_id, role, status)
-VALUES (?, ?, ?, ?)
-ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), left_at = NULL
+INSERT INTO conversation_members (conversation_id, user_id, role, status, joined_at)
+VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), joined_at = CURRENT_TIMESTAMP, left_at = NULL
 `, conversationID, userID, role, model.ConversationMemberStatusActive)
 	return err
 }

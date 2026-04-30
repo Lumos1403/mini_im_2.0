@@ -68,6 +68,7 @@ var (
 	ErrGroupDissolved        = New(60007, "group dissolved")
 	ErrGroupMemberNotFound   = New(60008, "group member not found")
 	ErrGroupMemberMuted      = New(60009, "group member muted")
+	ErrGroupOwnerCannotLeave = New(60010, "group owner cannot leave")
 )
 
 func HTTPStatus(err *AppError) int {
@@ -121,7 +122,7 @@ func HTTPStatus(err *AppError) int {
 		return http.StatusForbidden
 	case 60003, 60005:
 		return http.StatusConflict
-	case 60006, 60007, 60009, CodeGroup:
+	case 60006, 60007, 60009, 60010, CodeGroup:
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError

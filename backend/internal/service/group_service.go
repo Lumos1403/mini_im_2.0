@@ -295,6 +295,17 @@ func (s *GroupService) DissolveGroup(ctx context.Context, userID int64, groupIDV
 	return nil
 }
 
+func (s *GroupService) LeaveGroup(ctx context.Context, userID int64, groupIDValue string) *apperrors.AppError {
+	groupID, appErr := parsePositiveID(groupIDValue)
+	if appErr != nil {
+		return appErr
+	}
+	if err := s.groupRepo.Leave(ctx, groupID, userID); err != nil {
+		return mapGroupRepositoryError(err)
+	}
+	return nil
+}
+
 func randomGroupNo() string {
 	length := 8 + randomInt(3)
 	digits := make([]byte, length)
@@ -406,6 +417,8 @@ func mapGroupRepositoryError(err error) *apperrors.AppError {
 		return apperrors.ErrGroupMemberNotFound
 	case errors.Is(err, mysqlrepo.ErrGroupMemberMuted):
 		return apperrors.ErrGroupMemberMuted
+	case errors.Is(err, mysqlrepo.ErrGroupOwnerCannotLeave):
+		return apperrors.ErrGroupOwnerCannotLeave
 	default:
 		return apperrors.ErrInternal
 	}

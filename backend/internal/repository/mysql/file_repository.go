@@ -76,6 +76,9 @@ func (r *FileRepository) hasVisibleFileMessage(ctx context.Context, userID int64
 	err := r.db.QueryRowContext(ctx, `
 SELECT 1
 FROM messages m
+INNER JOIN conversations c
+  ON c.conversation_id = m.conversation_id
+  AND c.status = ?
 INNER JOIN conversation_members cm
   ON cm.conversation_id = m.conversation_id
   AND cm.user_id = ?
@@ -87,17 +90,33 @@ INNER JOIN message_user_states mus
   ON mus.message_id = m.message_id
   AND mus.user_id = ?
   AND mus.is_deleted = 0
+LEFT JOIN `+"`groups`"+` g
+  ON g.conversation_id = m.conversation_id
+  AND c.conversation_type = ?
+LEFT JOIN group_members gm
+  ON gm.group_id = g.group_id
+  AND gm.user_id = ?
 WHERE m.message_type = ?
   AND m.send_status = ?
   AND m.recalled_at IS NULL
   AND m.is_deleted_all = 0
   AND (cus.cleared_at IS NULL OR m.created_at > cus.cleared_at)
   AND (
+    c.conversation_type <> ?
+    OR (
+      g.status = ?
+      AND gm.status = ?
+      AND m.created_at >= gm.joined_at
+    )
+  )
+  AND (
     m.content = ?
     OR JSON_UNQUOTE(JSON_EXTRACT(m.extra_json, '$.file_id')) = ?
   )
 LIMIT 1
-`, userID, model.ConversationMemberStatusActive, userID, userID, model.MessageTypeFile, model.MessageSendStatusSent, fileIDValue, fileIDValue).Scan(&exists)
+`, model.ConversationStatusNormal, userID, model.ConversationMemberStatusActive, userID, userID,
+		model.ConversationTypeGroup, userID, model.MessageTypeFile, model.MessageSendStatusSent,
+		model.ConversationTypeGroup, model.GroupStatusNormal, model.GroupMemberStatusActive, fileIDValue, fileIDValue).Scan(&exists)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil

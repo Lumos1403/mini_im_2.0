@@ -14,34 +14,19 @@ import (
 	mysqlrepo "mini_im/backend/internal/repository/mysql"
 )
 
-type FriendEventRecorder interface {
-	RecordFriendDeleted(ctx context.Context, actorID int64, peerID int64) error
-}
-
-type noopFriendEventRecorder struct{}
-
-func (noopFriendEventRecorder) RecordFriendDeleted(ctx context.Context, actorID int64, peerID int64) error {
-	return nil
-}
-
 type FriendService struct {
 	userRepo         *mysqlrepo.UserRepository
 	friendRepo       *mysqlrepo.FriendRepository
 	conversationRepo *mysqlrepo.ConversationRepository
 	idGenerator      *snowflake.Node
-	eventRecorder    FriendEventRecorder
 }
 
-func NewFriendService(userRepo *mysqlrepo.UserRepository, friendRepo *mysqlrepo.FriendRepository, conversationRepo *mysqlrepo.ConversationRepository, idGenerator *snowflake.Node, eventRecorder FriendEventRecorder) *FriendService {
-	if eventRecorder == nil {
-		eventRecorder = noopFriendEventRecorder{}
-	}
+func NewFriendService(userRepo *mysqlrepo.UserRepository, friendRepo *mysqlrepo.FriendRepository, conversationRepo *mysqlrepo.ConversationRepository, idGenerator *snowflake.Node) *FriendService {
 	return &FriendService{
 		userRepo:         userRepo,
 		friendRepo:       friendRepo,
 		conversationRepo: conversationRepo,
 		idGenerator:      idGenerator,
-		eventRecorder:    eventRecorder,
 	}
 }
 
@@ -162,7 +147,7 @@ func (s *FriendService) AcceptFriendRequest(ctx context.Context, userID int64, r
 	if s.conversationRepo != nil {
 		conversationID := s.idGenerator.NextID()
 		afterAccept = func(ctx context.Context, exec mysqlrepo.Executor) error {
-			_, err := s.conversationRepo.EnsurePrivateConversationInTx(ctx, exec, conversationID, request.FromUserID, request.ToUserID)
+			_, err := s.conversationRepo.CreateFreshPrivateConversationInTx(ctx, exec, conversationID, request.FromUserID, request.ToUserID)
 			return err
 		}
 	}
@@ -227,9 +212,6 @@ func (s *FriendService) DeleteFriend(ctx context.Context, userID int64, friendUs
 		return apperrors.ErrInternal
 	}
 
-	if err := s.eventRecorder.RecordFriendDeleted(ctx, userID, friendUserID); err != nil {
-		return apperrors.ErrInternal
-	}
 	return nil
 }
 
