@@ -743,6 +743,43 @@ GET /api/files/{file_id}/download
 GET /api/search/messages?keyword=你好&page=1&page_size=20
 ```
 
+要求登录。
+
+查询参数：
+
+```txt
+keyword   必填，去除首尾空白后不能为空，空值返回参数错误
+page      可选，默认 1，小于等于 0 时按 1 处理
+page_size 可选，默认 20，最大 100
+```
+
+响应使用统一分页结构：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "message_id": "123",
+        "conversation_id": "456",
+        "conversation_type": "private",
+        "sender_id": "789",
+        "sender_nickname": "小明",
+        "sender_avatar_url": "",
+        "message_type": "text",
+        "content": "你好",
+        "created_at": "2026-05-01 12:00:00"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
 必须过滤：
 
 ```txt
@@ -752,13 +789,55 @@ GET /api/search/messages?keyword=你好&page=1&page_size=20
 不属于当前用户会话的消息
 删除好友后已清理的旧 private 会话消息
 退出群聊后当前用户不可见的群消息
-重新入群前产生的群消息
+重新入群后只能搜索本次 group_members.joined_at 之后产生的群消息
 ```
 
 ### 9.2 搜索文件
 
 ```txt
 GET /api/search/files?keyword=资料&page=1&page_size=20
+```
+
+要求登录。
+
+查询参数同搜索消息：`keyword` 必填且不能为空；`page` 默认 1；`page_size` 默认 20，最大 100。
+
+响应使用统一分页结构：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "list": [
+      {
+        "file_id": "123",
+        "original_name": "资料.pdf",
+        "file_size": 1024,
+        "mime_type": "application/pdf",
+        "uploader_id": "789",
+        "uploader_nickname": "小明",
+        "message_id": "111",
+        "conversation_id": "456",
+        "conversation_type": "group",
+        "created_at": "2026-05-01 12:00:00"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+说明：
+
+```txt
+文件搜索基于当前用户可见的 file 类型消息，不直接暴露 files 表。
+删除好友后的旧私聊文件消息不可搜索。
+退群后的旧群文件消息不可搜索。
+重新入群后只能搜索本次 group_members.joined_at 之后产生的群文件消息。
+已删除、已清空、已撤回的文件消息不可搜索。
 ```
 
 ## 10. 群聊接口

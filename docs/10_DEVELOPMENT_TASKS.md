@@ -326,6 +326,13 @@ GET /api/search/files
 
 必须遵守删除、清空、撤回过滤规则。
 
+当前拆分状态：
+
+```txt
+Step 11-A 后端搜索接口已完成：GET /api/search/messages、GET /api/search/files。
+Step 11-B 前端搜索功能待开发。
+```
+
 ## 阶段 10：群聊基础功能
 
 ## 阶段 10：群聊基础功能

@@ -12,7 +12,7 @@
 
 ## 2. 环境变量
 
-建议 `.env.example`：
+本地直接运行后端时建议 `.env.example`：
 
 ```env
 APP_ENV=dev
@@ -22,9 +22,9 @@ MYSQL_ROOT_PASSWORD=rootpassword
 MYSQL_DATABASE=go_im
 MYSQL_USER=goim
 MYSQL_PASSWORD=goimpassword
-MYSQL_DSN=goim:goimpassword@tcp(mysql:3306)/go_im?charset=utf8mb4&parseTime=True&loc=Local
+MYSQL_DSN=goim:goimpassword@tcp(127.0.0.1:3307)/go_im?charset=utf8mb4&parseTime=True&loc=Local
 
-REDIS_ADDR=redis:6379
+REDIS_ADDR=127.0.0.1:6379
 REDIS_PASSWORD=
 REDIS_DB=0
 
@@ -59,7 +59,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./backend/migrations:/docker-entrypoint-initdb.d
@@ -86,7 +86,7 @@ services:
     env_file:
       - .env
     ports:
-      - "8080:8081"
+      - "8081:8081"
     volumes:
       - uploads_data:/app/uploads
 
@@ -190,7 +190,11 @@ docker compose up -d --build
 ```txt
 前端：http://localhost:5173
 后端：http://localhost:8081
+MySQL：127.0.0.1:3307 -> 容器 3306
+Redis：127.0.0.1:6379
 ```
+
+如果后端也运行在 Docker Compose 网络内，后端容器访问 MySQL 和 Redis 时可使用服务名 `mysql:3306`、`redis:6379`。
 
 ## 8. 云服务器上线流程
 
