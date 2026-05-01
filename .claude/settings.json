@@ -1,11 +1,6 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",    
   "permissions": {
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(curl *)",
-      "Bash(wget *)"
-    ],
     "allow": [
       "Bash(git status *)",
       "Bash(git diff *)",
@@ -17,14 +12,32 @@
       "Bash(cat *)",
       "Bash(gofmt -w *)",
       "Bash(go test *)",
+      "Bash(go build *)",
       "Bash(go run *)",
-      "Bash(go mod tidy)",
       "Bash(npm *)",
       "Bash(pnpm *)",
       "Bash(yarn *)",
-      "Bash(docker compose *)"
+      "Bash(docker compose *)",
+      "Bash(curl *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git clean *)",
+      "Bash(del *)",
+      "Bash(erase *)",
+      "Bash(Remove-Item *)",
+      "Bash(curl *|*)",
+      "Bash(curl *&&*)",
+      "Bash(curl *;*)",
+      "Bash(curl *--output*)",
+      "Bash(curl *-o*)",
+      "Bash(curl *-O*)",
+      "Bash(curl *--remote-name*)",
+      "Bash(curl *--upload-file*)",
+      "Bash(curl *-T*)"
     ]
   },
+
   "hooks": {
     "PostToolUse": [
       {
