@@ -1,4 +1,5 @@
 ---
+name: ship-lite
 description: Low-token executor workflow for IM2. Use this for local validation, focused implementation, and concise handoff reports.
 ---
 

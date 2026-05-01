@@ -858,20 +858,22 @@ WHERE group_id = ? AND status = ?
 }
 
 func upsertGroupMember(ctx context.Context, exec Executor, groupID int64, userID int64, role string) error {
+	now := time.Now()
 	_, err := exec.ExecContext(ctx, `
 INSERT INTO group_members (group_id, user_id, role, status, mute_until, joined_at, left_at)
-VALUES (?, ?, ?, ?, NULL, CURRENT_TIMESTAMP, NULL)
-ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), mute_until = NULL, joined_at = CURRENT_TIMESTAMP, left_at = NULL, updated_at = CURRENT_TIMESTAMP
-`, groupID, userID, role, model.GroupMemberStatusActive)
+VALUES (?, ?, ?, ?, NULL, ?, NULL)
+ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), mute_until = NULL, joined_at = ?, left_at = NULL, updated_at = CURRENT_TIMESTAMP
+`, groupID, userID, role, model.GroupMemberStatusActive, now, now)
 	return err
 }
 
 func upsertConversationMemberWithRole(ctx context.Context, exec Executor, conversationID int64, userID int64, role string) error {
+	now := time.Now()
 	_, err := exec.ExecContext(ctx, `
 INSERT INTO conversation_members (conversation_id, user_id, role, status, joined_at)
-VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), joined_at = CURRENT_TIMESTAMP, left_at = NULL
-`, conversationID, userID, role, model.ConversationMemberStatusActive)
+VALUES (?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE role = VALUES(role), status = VALUES(status), joined_at = ?, left_at = NULL
+`, conversationID, userID, role, model.ConversationMemberStatusActive, now, now)
 	return err
 }
 

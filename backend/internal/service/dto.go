@@ -289,3 +289,28 @@ type UpdateGroupSettingsInput struct {
 	AllowMemberInvite *bool `json:"allow_member_invite"`
 	MaxMembers        *int  `json:"max_members"`
 }
+
+type SearchMessageItem struct {
+	MessageID        string `json:"message_id"`
+	ConversationID   string `json:"conversation_id"`
+	ConversationType string `json:"conversation_type"`
+	SenderID         string `json:"sender_id"`
+	SenderNickname   string `json:"sender_nickname"`
+	SenderAvatarURL  string `json:"sender_avatar_url"`
+	MessageType      string `json:"message_type"`
+	Content          string `json:"content"`
+	CreatedAt        string `json:"created_at"`
+}
+
+type SearchFileItem struct {
+	FileID           string `json:"file_id"`
+	OriginalName     string `json:"original_name"`
+	FileSize         int64  `json:"file_size"`
+	MimeType         string `json:"mime_type"`
+	UploaderID       string `json:"uploader_id"`
+	UploaderNickname string `json:"uploader_nickname"`
+	MessageID        string `json:"message_id"`
+	ConversationID   string `json:"conversation_id"`
+	ConversationType string `json:"conversation_type"`
+	CreatedAt        string `json:"created_at"`
+}

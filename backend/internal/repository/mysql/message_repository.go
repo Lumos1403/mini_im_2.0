@@ -250,7 +250,7 @@ WHERE m.conversation_id = ?
     OR (
       g.status = ?
       AND gm.status = ?
-      AND m.created_at >= gm.joined_at
+      AND m.created_at > gm.joined_at
     )
   )
 `+cursorClause+`ORDER BY m.message_id DESC

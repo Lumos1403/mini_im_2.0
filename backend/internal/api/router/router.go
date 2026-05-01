@@ -15,6 +15,7 @@ type Dependencies struct {
 	ConversationHandler *handler.ConversationHandler
 	MessageHandler      *handler.MessageHandler
 	FileHandler         *handler.FileHandler
+	SearchHandler       *handler.SearchHandler
 	AuthMiddleware      gin.HandlerFunc
 	WSServer            *ws.Server
 }
@@ -49,6 +50,9 @@ func New(deps Dependencies) *gin.Engine {
 	}
 	if deps.FileHandler != nil && deps.AuthMiddleware != nil {
 		deps.FileHandler.Register(api, deps.AuthMiddleware)
+	}
+	if deps.SearchHandler != nil && deps.AuthMiddleware != nil {
+		deps.SearchHandler.Register(api, deps.AuthMiddleware)
 	}
 
 	return engine

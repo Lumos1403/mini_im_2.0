@@ -449,7 +449,7 @@ func upsertConversationUserState(ctx context.Context, exec Executor, conversatio
 	_, err := exec.ExecContext(ctx, `
 INSERT INTO conversation_user_states (conversation_id, user_id, is_deleted, unread_count, is_pinned, is_muted)
 VALUES (?, ?, 0, 0, 0, 0)
-ON DUPLICATE KEY UPDATE is_deleted = 0, updated_at = CURRENT_TIMESTAMP
+ON DUPLICATE KEY UPDATE is_deleted = 0, cleared_at = NULL, unread_count = 0, updated_at = CURRENT_TIMESTAMP
 `, conversationID, userID)
 	return err
 }

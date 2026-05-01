@@ -76,6 +76,8 @@ func main() {
 	groupService := service.NewGroupService(groupRepo, idGenerator, cfg.IM.GroupMaxMembers)
 	fileService := service.NewFileService(fileRepo, fileStorage, idGenerator, cfg.File.MaxSizeMB)
 	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, fileRepo, groupRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)
+	searchRepo := mysqlrepo.NewSearchRepository(db)
+	searchService := service.NewSearchService(searchRepo, userRepo)
 	onlineService := service.NewOnlineService(onlineRepo, cfg.WebSocket.ServerID, time.Duration(cfg.WebSocket.OnlineTTLSeconds)*time.Second)
 	authMiddleware := middleware.NewAuthMiddleware(tokenManager, tokenRepo)
 	wsHub := ws.NewHub(onlineService)
@@ -92,6 +94,7 @@ func main() {
 		ConversationHandler: handler.NewConversationHandler(conversationService),
 		MessageHandler:      handler.NewMessageHandler(messageService),
 		FileHandler:         handler.NewFileHandler(fileService),
+		SearchHandler:       handler.NewSearchHandler(searchService),
 		AuthMiddleware:      authMiddleware,
 		WSServer:            wsServer,
 	})
