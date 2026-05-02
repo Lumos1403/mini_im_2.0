@@ -9,6 +9,7 @@ import GroupMemberDrawer from '../components/group/GroupMemberDrawer.vue'
 import GroupMemberProfileModal from '../components/group/GroupMemberProfileModal.vue'
 import GroupPanel from '../components/group/GroupPanel.vue'
 import GroupRoleBadge from '../components/group/GroupRoleBadge.vue'
+import SearchPanel from '../components/search/SearchPanel.vue'
 import { useChatStore, type ChatMessage } from '../stores/chat'
 import { useGroupStore } from '../stores/group'
 import { useWsStore } from '../stores/ws'
@@ -41,6 +42,7 @@ const {
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const messageArea = ref<HTMLElement | null>(null)
+const showSearchPanel = ref(false)
 
 const activeConversation = computed(() => chat.activeConversation)
 const activeGroupID = computed(() =>
@@ -138,6 +140,14 @@ function openConversation(conversationID: string) {
   void chat.selectConversation(conversationID)
 }
 
+async function openSearchConversation(conversationID: string) {
+  if (!chat.conversations.some((item) => item.conversation_id === conversationID)) {
+    await chat.loadConversationList(false)
+  }
+  await chat.selectConversation(conversationID)
+  showSearchPanel.value = false
+}
+
 function openGroupMembers() {
   if (activeGroupID.value) {
     groupStore.openMemberDrawer(activeGroupID.value)
@@ -210,6 +220,13 @@ function groupSenderName(message: ChatMessage) {
         </div>
         <div class="header-actions">
           <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
+          <button
+            class="search-button"
+            type="button"
+            @click="showSearchPanel = true"
+          >
+            搜索
+          </button>
           <button
             v-if="isGroupConversation"
             class="member-button"
@@ -338,6 +355,11 @@ function groupSenderName(message: ChatMessage) {
       :requesting="Boolean(selectedMember && friendRequestingUserID === selectedMember.user_id)"
       @close="groupStore.closeMemberProfile"
       @add-friend="addFriendFromGroup"
+    />
+    <SearchPanel
+      :open="showSearchPanel"
+      @close="showSearchPanel = false"
+      @open-conversation="openSearchConversation"
     />
   </section>
 </template>
@@ -748,7 +770,8 @@ function groupSenderName(message: ChatMessage) {
 .composer button,
 .load-more,
 .clear-button,
-.member-button {
+.member-button,
+.search-button {
   min-width: 78px;
   height: 38px;
   border: 0;
@@ -762,13 +785,15 @@ function groupSenderName(message: ChatMessage) {
 .composer button:disabled,
 .load-more:disabled,
 .clear-button:disabled,
-.member-button:disabled {
+.member-button:disabled,
+.search-button:disabled {
   background: #98a2b3;
   cursor: not-allowed;
 }
 
 .clear-button,
-.member-button {
+.member-button,
+.search-button {
   min-width: 64px;
   color: #ffffff;
   font-size: 13px;

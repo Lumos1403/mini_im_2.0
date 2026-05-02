@@ -1,1 +1,20 @@
-﻿hello file message 20260425140926
+﻿后端：
+
+docker compose up -d mysql redis
+cd D:\Study\Go_Project\mini_im_2.0
+
+docker start mini-im-mysql mini-im-redis
+
+cd backend
+
+$env:MYSQL_DSN="goim:goimpass@tcp(127.0.0.1:3307)/go_im?charset=utf8mb4&parseTime=true&loc=Local"
+$env:REDIS_ADDR="127.0.0.1:6379"
+$env:JWT_ACCESS_SECRET="local-access-secret"
+$env:JWT_REFRESH_SECRET="local-refresh-secret"
+
+go run ./cmd/server
+
+前端
+cd frontend
+npm.cmd install
+npm.cmd run dev
