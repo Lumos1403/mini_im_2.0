@@ -52,7 +52,7 @@ export const useWsStore = defineStore('ws', {
     connect() {
       const auth = useAuthStore()
       const token = auth.accessToken || localStorage.getItem('access_token')
-      if (!token || socket) {
+      if (!token || !auth.user || socket) {
         return
       }
 
@@ -77,6 +77,11 @@ export const useWsStore = defineStore('ws', {
       socket?.close()
       socket = null
       this.connected = false
+    },
+
+    resetAll() {
+      this.disconnect()
+      this.errorMessage = ''
     },
 
     sendChatMessage(data: OutgoingChatMessage) {

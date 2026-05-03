@@ -221,6 +221,26 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
+    resetAll() {
+      this.stopRecallNoticeExpiryTimer()
+      const recallNoticeKey = this.recallNoticeStorageKey()
+      if (recallNoticeKey) {
+        localStorage.removeItem(recallNoticeKey)
+      }
+      this.conversations = []
+      this.activeConversationID = ''
+      this.messages = []
+      this.draft = ''
+      this.loadingConversations = false
+      this.loadingMessages = false
+      this.uploadingFile = false
+      this.hasMore = false
+      this.errorMessage = ''
+      this.recallNoticeNow = Date.now()
+      this.scrollToBottomSignal = 0
+      this.seenMessageKeys = []
+    },
+
     async loadCurrentMessages(cursor: string) {
       if (!this.activeConversationID) {
         return

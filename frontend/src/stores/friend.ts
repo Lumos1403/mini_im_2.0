@@ -168,5 +168,16 @@ export const useFriendStore = defineStore('friend', {
       this.errorMessage = ''
       this.noticeMessage = ''
     },
+    resetAll() {
+      this.friends = []
+      this.receivedRequests = []
+      this.searchResults = []
+      this.loadingFriends = false
+      this.loadingRequests = false
+      this.searching = false
+      this.operating = false
+      this.errorMessage = ''
+      this.noticeMessage = ''
+    },
   },
 })

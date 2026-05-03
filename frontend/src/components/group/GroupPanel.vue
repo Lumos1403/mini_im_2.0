@@ -6,6 +6,7 @@ import type { GroupJoinRequest, GroupMember } from '../../api/group'
 import { useAuthStore } from '../../stores/auth'
 import { useChatStore } from '../../stores/chat'
 import { useGroupStore } from '../../stores/group'
+import GroupRoleBadge from './GroupRoleBadge.vue'
 
 const emit = defineEmits<{
   (event: 'open-conversation', conversationID: string): void
@@ -20,7 +21,7 @@ const { searchResults, joinRequests, members, loading, operating, errorMessage, 
 
 const createName = ref('')
 const searchKeyword = ref('')
-const joinMessage = ref('I want to join this group')
+const joinMessage = ref('I want to join this group.')
 const allowMemberInvite = ref(true)
 const maxMembers = ref(50)
 
@@ -28,7 +29,7 @@ const activeConversation = computed(() => chat.activeConversation)
 const activeGroupID = computed(() => activeConversation.value?.group_id || '')
 const currentUserID = computed(() => auth.user?.user_id || '')
 const currentMember = computed(() => members.value.find((item) => item.user_id === currentUserID.value))
-const currentRole = computed(() => currentMember.value?.role || '')
+const currentRole = computed(() => currentMember.value?.role || 'member')
 const canManageRequests = computed(() => currentRole.value === 'owner' || currentRole.value === 'admin')
 const canManageAdmins = computed(() => currentRole.value === 'owner')
 const canManageMembers = computed(() => currentRole.value === 'owner' || currentRole.value === 'admin')
@@ -161,16 +162,21 @@ function canMute(member: GroupMember) {
 
 <template>
   <section class="group-panel">
-    <header class="group-header">
-      <h2>Groups</h2>
-      <button type="button" :disabled="loading || operating" @click="refreshActiveGroup">Refresh</button>
+    <header class="panel-header">
+      <div>
+        <h2>Groups</h2>
+        <small>Global group tools and current group controls</small>
+      </div>
+      <button type="button" :disabled="loading || operating || !activeGroupID" @click="refreshActiveGroup">
+        Refresh
+      </button>
     </header>
 
-    <p v-if="errorMessage" class="status-text error">{{ errorMessage }}</p>
-    <p v-else-if="noticeMessage" class="status-text success">{{ noticeMessage }}</p>
+    <p v-if="errorMessage" class="status error">{{ errorMessage }}</p>
+    <p v-else-if="noticeMessage" class="status success">{{ noticeMessage }}</p>
 
     <section class="group-section">
-      <h3>Create</h3>
+      <h3>Create group</h3>
       <form class="inline-form" @submit.prevent="createGroup">
         <input v-model="createName" maxlength="100" placeholder="Group name" />
         <button type="submit" :disabled="operating">Create</button>
@@ -178,9 +184,9 @@ function canMute(member: GroupMember) {
     </section>
 
     <section class="group-section">
-      <h3>Search</h3>
+      <h3>Find group</h3>
       <form class="inline-form" @submit.prevent="search">
-        <input v-model="searchKeyword" placeholder="Group no" />
+        <input v-model="searchKeyword" placeholder="Group no or keyword" />
         <button type="submit" :disabled="loading">Search</button>
       </form>
       <input v-model="joinMessage" class="wide-input" maxlength="255" />
@@ -196,14 +202,19 @@ function canMute(member: GroupMember) {
           >
             Open
           </button>
-          <button v-else type="button" :disabled="operating" @click="applyJoin(group.group_id)">Join</button>
+          <button v-else type="button" :disabled="operating" @click="applyJoin(group.group_id)">
+            Request join
+          </button>
         </div>
       </article>
     </section>
 
     <section class="group-section">
-      <h3>Active Group</h3>
-      <div v-if="!activeGroupID" class="empty-text">Select a group conversation</div>
+      <div class="section-title-row">
+        <h3>Current group</h3>
+        <GroupRoleBadge :role="currentRole" />
+      </div>
+      <div v-if="!activeGroupID" class="empty-text">Select a group conversation first.</div>
       <template v-else>
         <p class="meta-line">{{ activeConversation?.title }} / {{ activeConversation?.group_no }}</p>
 
@@ -222,24 +233,16 @@ function canMute(member: GroupMember) {
             Save max
           </button>
         </div>
-        <button
-          class="danger-button"
-          type="button"
-          :disabled="operating || currentRole !== 'owner'"
-          @click="dissolveGroup"
-        >
-          Dissolve
-        </button>
-        <button
-          class="danger-button"
-          type="button"
-          :disabled="operating || currentRole === 'owner'"
-          @click="leaveGroup"
-        >
-          Leave
-        </button>
+        <div class="action-row">
+          <button class="danger" type="button" :disabled="operating || currentRole !== 'owner'" @click="dissolveGroup">
+            Dissolve
+          </button>
+          <button class="danger" type="button" :disabled="operating || currentRole === 'owner'" @click="leaveGroup">
+            Leave
+          </button>
+        </div>
 
-        <h3>Join Requests</h3>
+        <h3>Join requests</h3>
         <article v-for="request in joinRequests" :key="request.request_id" class="mini-card">
           <strong>{{ request.user.nickname || request.user.user_id }}</strong>
           <small>{{ request.status }} / {{ request.message || 'No message' }}</small>
@@ -248,7 +251,7 @@ function canMute(member: GroupMember) {
             <button type="button" :disabled="operating" @click="reject(request)">Reject</button>
           </div>
         </article>
-        <div v-if="joinRequests.length === 0" class="empty-text">No requests</div>
+        <div v-if="joinRequests.length === 0" class="empty-text">No join requests.</div>
 
         <h3>Members</h3>
         <article v-for="member in members" :key="member.user_id" class="mini-card">
@@ -259,12 +262,17 @@ function canMute(member: GroupMember) {
               Set admin
             </button>
             <button v-if="canDemote(member)" type="button" :disabled="operating" @click="unsetAdmin(member)">
-              Unset admin
+              Remove admin
             </button>
-            <button v-if="canMute(member)" type="button" :disabled="operating" @click="mute(member)">Mute 10m</button>
-            <button v-if="canMute(member)" type="button" :disabled="operating" @click="unmute(member)">Unmute</button>
+            <button v-if="canMute(member)" type="button" :disabled="operating" @click="mute(member)">
+              Mute
+            </button>
+            <button v-if="canMute(member)" type="button" :disabled="operating" @click="unmute(member)">
+              Unmute
+            </button>
           </div>
         </article>
+        <div v-if="members.length === 0" class="empty-text">No members loaded.</div>
       </template>
     </section>
   </section>
@@ -272,102 +280,150 @@ function canMute(member: GroupMember) {
 
 <style scoped>
 .group-panel {
-  display: flex;
   min-height: 0;
-  flex-direction: column;
-  overflow-y: auto;
-  border-top: 1px solid #dde3ee;
-  background: #ffffff;
+  color: var(--text);
 }
 
-.group-header {
+.panel-header {
   display: flex;
-  flex: 0 0 48px;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  border-bottom: 1px solid #eef2f6;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 14px;
 }
 
-.group-header h2,
-.group-section h3 {
+h2,
+h3,
+p {
   margin: 0;
-  font-size: 16px;
+}
+
+h2 {
+  color: #fff7e8;
+  font-size: 17px;
+}
+
+.panel-header small,
+.meta-line {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.status {
+  margin: 10px 12px 0;
+  border-radius: 10px;
+  padding: 9px 10px;
+  font-size: 13px;
+}
+
+.status.error {
+  color: #ffd4d4;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.status.success {
+  color: #cbffe3;
+  background: rgba(94, 226, 160, 0.13);
 }
 
 .group-section {
-  padding: 12px;
-  border-bottom: 1px solid #eef2f6;
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid rgba(240, 207, 132, 0.1);
+  padding: 14px;
 }
 
-.inline-form,
-.settings-row {
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h3 {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.inline-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 86px;
+  grid-template-columns: minmax(0, 1fr) 92px;
   gap: 8px;
-  margin-top: 8px;
 }
 
 input {
+  height: 36px;
   min-width: 0;
-  height: 34px;
-  border: 1px solid #cfd6e4;
-  border-radius: 7px;
-  padding: 0 9px;
-  font: inherit;
+  border: 1px solid rgba(240, 207, 132, 0.16);
+  border-radius: 9px;
+  padding: 0 10px;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .wide-input {
   width: 100%;
-  margin-top: 8px;
 }
 
 button {
-  min-height: 34px;
-  border: 0;
-  border-radius: 7px;
-  background: #eef4ff;
-  color: #175cd3;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  height: 34px;
+  border: 1px solid rgba(240, 207, 132, 0.16);
+  border-radius: 9px;
+  padding: 0 10px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.07);
   cursor: pointer;
+  font-weight: 760;
 }
 
-button:disabled {
-  background: #eaecf0;
-  color: #98a2b3;
-  cursor: not-allowed;
-}
-
-.danger-button {
-  width: 100%;
-  margin-top: 8px;
-  background: #fff1f3;
-  color: #c01048;
+button:hover {
+  border-color: rgba(240, 207, 132, 0.3);
+  color: var(--text);
 }
 
 .mini-card {
-  padding: 10px;
-  margin-top: 8px;
-  border: 1px solid #e4e7ec;
-  border-radius: 8px;
+  border: 1px solid rgba(240, 207, 132, 0.12);
+  border-radius: 12px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .mini-card strong,
-.mini-card small,
-.meta-line {
+.mini-card small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mini-card small,
-.meta-line,
-.empty-text {
-  color: #667085;
+.mini-card small {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
   font-size: 13px;
+}
+
+.settings-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.settings-row input[type="number"] {
+  width: 110px;
 }
 
 .action-row {
@@ -378,30 +434,17 @@ button:disabled {
   margin-top: 8px;
 }
 
-.action-row button {
-  min-width: 74px;
-  padding: 0 8px;
-}
-
-.status-text {
-  margin: 10px 12px 0;
-  padding: 8px 10px;
-  border-radius: 7px;
-  font-size: 13px;
-}
-
-.status-text.error {
-  background: #fff1f3;
-  color: #c01048;
-}
-
-.status-text.success {
-  background: #ecfdf3;
-  color: #027a48;
+.danger {
+  color: #ffd8d8;
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(239, 68, 68, 0.12);
 }
 
 .empty-text {
-  padding: 12px;
+  border: 1px dashed rgba(240, 207, 132, 0.14);
+  border-radius: 12px;
+  padding: 18px;
+  color: var(--text-muted);
   text-align: center;
 }
 </style>

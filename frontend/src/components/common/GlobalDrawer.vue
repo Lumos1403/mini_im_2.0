@@ -1,47 +1,29 @@
 <script setup lang="ts">
-import type { GroupMember } from '../../api/group'
-import GroupMemberList from './GroupMemberList.vue'
-
 defineProps<{
   open: boolean
-  title?: string
-  members: GroupMember[]
-  loading?: boolean
-  selectedUserId?: string
+  title: string
+  description?: string
 }>()
 
 const emit = defineEmits<{
   (event: 'close'): void
-  (event: 'refresh'): void
-  (event: 'select', member: GroupMember): void
 }>()
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="open" class="drawer-layer">
-      <button class="drawer-mask" type="button" aria-label="Close group members" @click="emit('close')"></button>
-      <aside class="member-drawer" aria-label="Group members">
+      <button class="drawer-mask" type="button" aria-label="Close drawer" @click="emit('close')"></button>
+      <aside class="drawer" :aria-label="title">
         <header class="drawer-header">
-          <div class="drawer-title">
-            <strong>Group members</strong>
-            <small>{{ title || 'Current group' }} / {{ members.length }} members</small>
+          <div>
+            <strong>{{ title }}</strong>
+            <small v-if="description">{{ description }}</small>
           </div>
-          <div class="drawer-actions">
-            <button type="button" :disabled="loading" @click="emit('refresh')">
-              {{ loading ? 'Refreshing...' : 'Refresh' }}
-            </button>
-            <button type="button" @click="emit('close')">Close</button>
-          </div>
+          <button type="button" @click="emit('close')">Close</button>
         </header>
-
         <div class="drawer-body">
-          <GroupMemberList
-            :members="members"
-            :loading="loading"
-            :selected-user-id="selectedUserId"
-            @select="emit('select', $event)"
-          />
+          <slot />
         </div>
       </aside>
     </div>
@@ -52,7 +34,7 @@ const emit = defineEmits<{
 .drawer-layer {
   position: fixed;
   inset: 0;
-  z-index: 62;
+  z-index: 60;
   display: flex;
   justify-content: flex-end;
 }
@@ -62,17 +44,19 @@ const emit = defineEmits<{
   inset: 0;
   border: 0;
   background: rgba(0, 0, 0, 0.46);
+  cursor: default;
 }
 
-.member-drawer {
+.drawer {
   position: relative;
   z-index: 1;
   display: flex;
-  width: min(460px, 94vw);
+  width: min(500px, 94vw);
   height: 100%;
   min-height: 0;
   flex-direction: column;
   border-left: 1px solid rgba(240, 207, 132, 0.16);
+  color: var(--text);
   background: rgba(12, 14, 15, 0.94);
   box-shadow: -30px 0 80px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(24px);
@@ -83,45 +67,31 @@ const emit = defineEmits<{
   flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   border-bottom: 1px solid var(--border);
   padding: 16px;
 }
 
-.drawer-title {
-  min-width: 0;
-}
-
-.drawer-title strong,
-.drawer-title small {
+.drawer-header strong,
+.drawer-header small {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.drawer-title strong {
+.drawer-header strong {
   color: #fff7e8;
   font-size: 17px;
 }
 
-.drawer-title small {
+.drawer-header small {
   margin-top: 4px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
-.drawer-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
-}
-
-.drawer-actions button {
+.drawer-header button {
   height: 34px;
   border: 1px solid rgba(240, 207, 132, 0.16);
   border-radius: 9px;
-  padding: 0 10px;
   color: var(--text-soft);
   background: rgba(255, 255, 255, 0.07);
   cursor: pointer;
@@ -129,14 +99,14 @@ const emit = defineEmits<{
   font-weight: 760;
 }
 
-.drawer-actions button:hover {
+.drawer-header button:hover {
   border-color: rgba(240, 207, 132, 0.3);
   color: var(--text);
 }
 
 .drawer-body {
   min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
-  padding: 14px;
 }
 </style>

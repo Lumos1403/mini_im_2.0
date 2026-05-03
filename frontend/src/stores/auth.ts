@@ -8,6 +8,7 @@ interface AuthState {
   accessToken: string
   refreshToken: string
   user: UserInfo | null
+  bootstrapped: boolean
 }
 
 export const useAuthStore = defineStore('auth', {
@@ -15,7 +16,16 @@ export const useAuthStore = defineStore('auth', {
     accessToken: localStorage.getItem('access_token') || '',
     refreshToken: localStorage.getItem('refresh_token') || '',
     user: loadStoredUser(),
+    bootstrapped: false,
   }),
+  getters: {
+    isAuthenticated(state) {
+      return Boolean(state.accessToken && state.user)
+    },
+    hasToken(state) {
+      return Boolean(state.accessToken)
+    },
+  },
   actions: {
     async login(username: string, password: string) {
       const result = await authApi.login({ username, password })
@@ -29,14 +39,25 @@ export const useAuthStore = defineStore('auth', {
         throw new Error('missing refresh token')
       }
       const result = await authApi.refresh(this.refreshToken)
-      this.accessToken = result.access_token
-      this.refreshToken = result.refresh_token
-      localStorage.setItem('access_token', result.access_token)
-      localStorage.setItem('refresh_token', result.refresh_token)
+      this.setTokens(result.access_token, result.refresh_token)
     },
     async loadMe() {
       this.user = await authApi.getMe()
+      this.bootstrapped = true
       localStorage.setItem('current_user', JSON.stringify(this.user))
+    },
+    async ensureSession() {
+      if (!this.accessToken) {
+        this.bootstrapped = true
+        return false
+      }
+      try {
+        await this.loadMe()
+        return true
+      } catch {
+        this.clearAuth()
+        return false
+      }
     },
     async logout() {
       try {
@@ -51,9 +72,16 @@ export const useAuthStore = defineStore('auth', {
       this.accessToken = accessToken
       this.refreshToken = refreshToken
       this.user = user
+      this.bootstrapped = true
       localStorage.setItem('access_token', accessToken)
       localStorage.setItem('refresh_token', refreshToken)
       localStorage.setItem('current_user', JSON.stringify(user))
+    },
+    setTokens(accessToken: string, refreshToken: string) {
+      this.accessToken = accessToken
+      this.refreshToken = refreshToken
+      localStorage.setItem('access_token', accessToken)
+      localStorage.setItem('refresh_token', refreshToken)
     },
     syncProfile(profile: UserProfile) {
       const user = {
@@ -69,9 +97,13 @@ export const useAuthStore = defineStore('auth', {
       this.accessToken = ''
       this.refreshToken = ''
       this.user = null
+      this.bootstrapped = true
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
       localStorage.removeItem('current_user')
+    },
+    resetAll() {
+      this.clearAuth()
     },
   },
 })

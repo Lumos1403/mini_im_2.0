@@ -297,6 +297,22 @@ export const useGroupStore = defineStore('group', {
       this.noticeMessage = ''
     },
 
+    resetAll() {
+      this.searchResults = []
+      this.joinRequests = []
+      this.members = []
+      this.membersGroupID = ''
+      this.loadingMembers = false
+      this.memberDrawerOpen = false
+      this.selectedMemberID = ''
+      this.memberProfileOpen = false
+      this.friendRequestingUserID = ''
+      this.loading = false
+      this.operating = false
+      this.errorMessage = ''
+      this.noticeMessage = ''
+    },
+
     async withOperation<T>(operation: () => Promise<T>): Promise<T | undefined> {
       this.operating = true
       this.clearMessages()

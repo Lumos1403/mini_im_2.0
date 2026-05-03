@@ -15,7 +15,7 @@ const emit = defineEmits<{
   (event: 'add-friend', member: GroupMember, message: string): void
 }>()
 
-const requestMessage = ref('我是群里的成员')
+const requestMessage = ref('I am a member of the same group.')
 
 const displayName = computed(() => props.member?.nickname || props.member?.user_id || '')
 const canAddFriend = computed(() => props.member?.friendship_status === 'not_friend')
@@ -23,7 +23,7 @@ const canAddFriend = computed(() => props.member?.friendship_status === 'not_fri
 watch(
   () => props.member?.user_id,
   () => {
-    requestMessage.value = '我是群里的成员'
+    requestMessage.value = 'I am a member of the same group.'
   },
 )
 
@@ -33,20 +33,20 @@ function avatarText(member: GroupMember) {
 
 function roleText(role: GroupRole) {
   const labels: Record<GroupRole, string> = {
-    owner: '群主',
-    admin: '管理员',
-    member: '成员',
+    owner: 'Owner',
+    admin: 'Admin',
+    member: 'Member',
   }
-  return labels[role] || '成员'
+  return labels[role] || 'Member'
 }
 
 function friendshipText(status: GroupFriendshipStatus) {
   const labels: Record<GroupFriendshipStatus, string> = {
-    self: '这是你自己',
-    friend: '已是好友',
-    not_friend: '可以添加好友',
-    pending_sent: '申请中',
-    pending_received: '对方已申请添加你',
+    self: 'This is you',
+    friend: 'Already friends',
+    not_friend: 'Can add friend',
+    pending_sent: 'Request sent',
+    pending_received: 'They sent you a request',
   }
   return labels[status] || status
 }
@@ -62,11 +62,11 @@ function addFriend() {
 <template>
   <Teleport to="body">
     <div v-if="open && member" class="modal-layer">
-      <button class="modal-mask" type="button" aria-label="关闭成员资料" @click="emit('close')"></button>
-      <section class="profile-modal" aria-label="群成员资料">
+      <button class="modal-mask" type="button" aria-label="Close member profile" @click="emit('close')"></button>
+      <section class="profile-modal" aria-label="Group member profile">
         <header class="profile-header">
-          <strong>成员资料</strong>
-          <button type="button" @click="emit('close')">关闭</button>
+          <strong>Member profile</strong>
+          <button type="button" @click="emit('close')">Close</button>
         </header>
 
         <div class="profile-body">
@@ -78,33 +78,33 @@ function addFriend() {
             <GroupRoleBadge :role="member.role" />
           </div>
           <small class="profile-id">{{ member.user_id }}</small>
-          <p class="profile-bio">{{ member.bio?.trim() || '暂无个性签名' }}</p>
+          <p class="profile-bio">{{ member.bio?.trim() || 'No bio' }}</p>
 
           <dl class="profile-fields">
             <div>
-              <dt>群身份</dt>
+              <dt>Role</dt>
               <dd>{{ roleText(member.role) }}</dd>
             </div>
             <div>
-              <dt>好友状态</dt>
+              <dt>Friendship</dt>
               <dd>{{ friendshipText(member.friendship_status) }}</dd>
             </div>
           </dl>
 
           <div class="profile-actions">
-            <span v-if="member.friendship_status === 'self'" class="state-text">这是你自己</span>
-            <button v-else-if="member.friendship_status === 'friend'" type="button" disabled>已是好友</button>
+            <span v-if="member.friendship_status === 'self'" class="state-text">This is you</span>
+            <button v-else-if="member.friendship_status === 'friend'" type="button" disabled>Already friends</button>
             <template v-else-if="member.friendship_status === 'not_friend'">
               <input v-model="requestMessage" maxlength="100" type="text" />
               <button type="button" :disabled="requesting" @click="addFriend">
-                {{ requesting ? '发送中' : '添加好友' }}
+                {{ requesting ? 'Sending...' : 'Add friend' }}
               </button>
             </template>
             <button v-else-if="member.friendship_status === 'pending_sent'" type="button" disabled>
-              申请中
+              Request sent
             </button>
             <span v-else-if="member.friendship_status === 'pending_received'" class="state-text">
-              对方已申请添加你
+              They sent you a request
             </span>
           </div>
         </div>
@@ -117,7 +117,7 @@ function addFriend() {
 .modal-layer {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 72;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -127,18 +127,19 @@ function addFriend() {
   position: absolute;
   inset: 0;
   border: 0;
-  background: rgba(16, 24, 40, 0.36);
-  cursor: default;
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .profile-modal {
   position: relative;
   z-index: 1;
-  width: min(380px, 92vw);
+  width: min(390px, 92vw);
   overflow: hidden;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 18px 44px rgba(16, 24, 40, 0.2);
+  border: 1px solid rgba(240, 207, 132, 0.18);
+  border-radius: 16px;
+  color: var(--text);
+  background: rgba(12, 14, 15, 0.96);
+  box-shadow: 0 28px 72px rgba(0, 0, 0, 0.5);
 }
 
 .profile-header {
@@ -146,32 +147,26 @@ function addFriend() {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid var(--border);
   padding: 14px 16px;
-  border-bottom: 1px solid #e4e7ec;
 }
 
 .profile-header button,
 .profile-actions button {
   height: 34px;
-  border: 0;
-  border-radius: 7px;
+  border: 1px solid rgba(240, 207, 132, 0.16);
+  border-radius: 9px;
   padding: 0 12px;
-  background: #eef4ff;
-  color: #175cd3;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.07);
   cursor: pointer;
-}
-
-.profile-header button {
-  min-width: 56px;
+  font-size: 13px;
+  font-weight: 760;
 }
 
 .profile-actions button:disabled {
-  background: #eaecf0;
-  color: #98a2b3;
   cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .profile-body {
@@ -181,20 +176,20 @@ function addFriend() {
 
 .profile-avatar {
   display: grid;
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   margin: 0 auto 12px;
   place-items: center;
-  border-radius: 50%;
-  background: #344054;
-  color: #ffffff;
+  border-radius: 18px;
+  color: #171009;
+  background: linear-gradient(135deg, #f0cf84, #9a7535);
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 900;
   object-fit: cover;
 }
 
 .profile-avatar.image {
-  background: #f2f4f7;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .profile-name-row {
@@ -208,21 +203,22 @@ function addFriend() {
 .profile-name-row h3 {
   overflow: hidden;
   margin: 0;
-  font-size: 18px;
+  color: #fff7e8;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 18px;
 }
 
 .profile-id {
   display: block;
-  margin-top: 4px;
-  color: #667085;
+  margin-top: 5px;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .profile-bio {
   margin: 12px 0 0;
-  color: #475467;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
   word-break: break-word;
@@ -237,9 +233,9 @@ function addFriend() {
 }
 
 .profile-fields div {
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 9px 10px;
-  background: #f8fafc;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .profile-fields dt,
@@ -248,15 +244,15 @@ function addFriend() {
 }
 
 .profile-fields dt {
-  color: #667085;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
 .profile-fields dd {
   margin-top: 4px;
-  color: #101828;
+  color: var(--text-soft);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .profile-actions {
@@ -268,18 +264,19 @@ function addFriend() {
 .profile-actions input {
   width: 100%;
   height: 36px;
-  border: 1px solid #cfd6e4;
-  border-radius: 7px;
+  border: 1px solid rgba(240, 207, 132, 0.16);
+  border-radius: 9px;
   padding: 0 10px;
-  font: inherit;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .state-text {
   display: block;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 10px;
-  background: #f2f4f7;
-  color: #475467;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
   font-size: 13px;
 }
 </style>

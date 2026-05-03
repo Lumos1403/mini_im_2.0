@@ -9,7 +9,7 @@ const props = defineProps<{
 
 const normalizedRole = computed(() => (props.role === 'owner' || props.role === 'admin' ? props.role : 'member'))
 const visible = computed(() => normalizedRole.value === 'owner' || normalizedRole.value === 'admin')
-const label = computed(() => (normalizedRole.value === 'owner' ? '群主' : '管理员'))
+const label = computed(() => (normalizedRole.value === 'owner' ? 'Owner' : 'Admin'))
 </script>
 
 <template>
@@ -19,23 +19,23 @@ const label = computed(() => (normalizedRole.value === 'owner' ? '群主' : '管
 <style scoped>
 .group-role-badge {
   display: inline-flex;
-  height: 18px;
+  height: 19px;
   align-items: center;
-  border-radius: 4px;
+  border-radius: 5px;
   padding: 0 6px;
   font-size: 11px;
-  font-weight: 700;
-  line-height: 18px;
+  font-weight: 840;
+  line-height: 19px;
   white-space: nowrap;
 }
 
 .group-role-badge.owner {
-  background: #fff4cc;
-  color: #946200;
+  color: #201304;
+  background: #f0cf84;
 }
 
 .group-role-badge.admin {
-  background: #dcfae6;
-  color: #027a48;
+  color: #041b10;
+  background: #5ee2a0;
 }
 </style>

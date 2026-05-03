@@ -24,7 +24,7 @@ const sortedMembers = computed(() =>
     if (Number.isFinite(joinedDiff) && joinedDiff !== 0) {
       return joinedDiff
     }
-    return displayName(left).localeCompare(displayName(right), 'zh-Hans-CN')
+    return displayName(left).localeCompare(displayName(right))
   }),
 )
 
@@ -47,40 +47,40 @@ function avatarText(member: GroupMember) {
 
 function roleText(role: GroupRole) {
   const labels: Record<GroupRole, string> = {
-    owner: '群主',
-    admin: '管理员',
-    member: '成员',
+    owner: 'Owner',
+    admin: 'Admin',
+    member: 'Member',
   }
-  return labels[role] || '成员'
+  return labels[role] || 'Member'
 }
 
 function friendshipText(status: GroupFriendshipStatus) {
   const labels: Record<GroupFriendshipStatus, string> = {
-    self: '自己',
-    friend: '已是好友',
-    not_friend: '非好友',
-    pending_sent: '申请中',
-    pending_received: '对方已申请',
+    self: 'You',
+    friend: 'Friend',
+    not_friend: 'Not friend',
+    pending_sent: 'Request sent',
+    pending_received: 'Request received',
   }
   return labels[status] || status
 }
 
 function muteText(value: string | null) {
   if (!value) {
-    return '未禁言'
+    return 'Not muted'
   }
   const time = Date.parse(value)
   if (!Number.isFinite(time)) {
     return value
   }
-  return time > Date.now() ? `禁言至 ${new Date(time).toLocaleString()}` : '未禁言'
+  return time > Date.now() ? `Muted until ${new Date(time).toLocaleString()}` : 'Not muted'
 }
 </script>
 
 <template>
   <div class="group-member-list">
-    <div v-if="loading && sortedMembers.length === 0" class="empty-text">加载中</div>
-    <div v-else-if="sortedMembers.length === 0" class="empty-text">暂无群成员</div>
+    <div v-if="loading && sortedMembers.length === 0" class="empty-text">Loading members...</div>
+    <div v-else-if="sortedMembers.length === 0" class="empty-text">No members loaded.</div>
 
     <article
       v-for="member in sortedMembers"
@@ -98,7 +98,7 @@ function muteText(value: string | null) {
           <GroupRoleBadge :role="member.role" />
         </button>
         <small>{{ member.user_id }}</small>
-        <p>{{ member.bio?.trim() || '暂无个性签名' }}</p>
+        <p>{{ member.bio?.trim() || 'No bio' }}</p>
         <div class="member-tags">
           <span>{{ roleText(member.role) }}</span>
           <span>{{ muteText(member.mute_until) }}</span>
@@ -121,15 +121,15 @@ function muteText(value: string | null) {
   display: flex;
   min-width: 0;
   gap: 10px;
-  border: 1px solid #e4e7ec;
-  border-radius: 8px;
+  border: 1px solid rgba(240, 207, 132, 0.12);
+  border-radius: 12px;
   padding: 10px;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .member-row.selected {
-  border-color: #84caff;
-  background: #f5faff;
+  border-color: rgba(240, 207, 132, 0.35);
+  background: rgba(240, 207, 132, 0.09);
 }
 
 .avatar-button,
@@ -138,9 +138,8 @@ function muteText(value: string | null) {
   padding: 0;
   background: transparent;
   color: inherit;
-  font: inherit;
-  text-align: left;
   cursor: pointer;
+  text-align: left;
 }
 
 .member-avatar {
@@ -149,15 +148,15 @@ function muteText(value: string | null) {
   height: 42px;
   flex: 0 0 42px;
   place-items: center;
-  border-radius: 50%;
-  background: #344054;
-  color: #ffffff;
-  font-weight: 700;
+  border-radius: 12px;
+  color: #171009;
+  background: linear-gradient(135deg, #f0cf84, #9a7535);
+  font-weight: 900;
   object-fit: cover;
 }
 
 .member-avatar.image {
-  background: #f2f4f7;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .member-meta {
@@ -179,14 +178,10 @@ function muteText(value: string | null) {
   white-space: nowrap;
 }
 
-.name-button strong {
-  min-width: 0;
-}
-
 .member-meta small {
   display: block;
-  margin-top: 2px;
-  color: #667085;
+  margin-top: 3px;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -194,7 +189,7 @@ function muteText(value: string | null) {
   display: -webkit-box;
   overflow: hidden;
   margin: 5px 0 0;
-  color: #475467;
+  color: var(--text-muted);
   font-size: 13px;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -209,17 +204,19 @@ function muteText(value: string | null) {
 
 .member-tags span {
   min-height: 22px;
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 3px 7px;
-  background: #f2f4f7;
-  color: #475467;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.07);
   font-size: 12px;
   line-height: 16px;
 }
 
 .empty-text {
+  border: 1px dashed rgba(240, 207, 132, 0.14);
+  border-radius: 12px;
   padding: 18px;
-  color: #667085;
+  color: var(--text-muted);
   text-align: center;
 }
 </style>
