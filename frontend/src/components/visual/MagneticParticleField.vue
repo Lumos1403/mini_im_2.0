@@ -32,6 +32,11 @@ let pointer: MagnetFocus | null = null
 let buttonFocus: MagnetFocus | null = null
 let lastPointerMove = 0
 
+const brownianJitter = 0.072
+const brownianDamping = 0.965
+const springStrength = 0.0016
+const maxBrownianSpeed = 0.58
+
 onMounted(() => {
   const canvas = canvasRef.value
   if (!canvas) {
@@ -132,15 +137,19 @@ function draw(now: number) {
   for (const particle of particles) {
     applyParticleMotion(particle, pointer)
     applyParticleMotion(particle, buttonFocus)
+    applyBrownianMotion(particle)
 
-    const springX = (particle.baseX - particle.x) * 0.012 * particle.depth
-    const springY = (particle.baseY - particle.y) * 0.012 * particle.depth
-    particle.vx = (particle.vx + springX) * 0.9
-    particle.vy = (particle.vy + springY) * 0.9
+    const spring = brownianSpring(particle)
+    const springX = spring.x * springStrength * particle.depth
+    const springY = spring.y * springStrength * particle.depth
+    particle.vx = (particle.vx + springX) * brownianDamping
+    particle.vy = (particle.vy + springY) * brownianDamping
+    clampParticleSpeed(particle)
     particle.x += particle.vx
     particle.y += particle.vy
 
     const glow = particleGlow(particle)
+    paintParticleHalo(particle, glow)
     ctx.beginPath()
     ctx.fillStyle = `rgba(240, 207, 132, ${Math.min(0.9, particle.alpha + glow)})`
     ctx.shadowColor = 'rgba(240, 207, 132, 0.75)'
@@ -196,6 +205,42 @@ function applyParticleMotion(particle: Particle, focus: MagnetFocus | null) {
   particle.vy += dy * pull + dx * tangent
 }
 
+function applyBrownianMotion(particle: Particle) {
+  particle.vx += (Math.random() - 0.5) * brownianJitter * particle.depth
+  particle.vy += (Math.random() - 0.5) * brownianJitter * particle.depth
+}
+
+function brownianSpring(particle: Particle) {
+  const dx = particle.baseX - particle.x
+  const dy = particle.baseY - particle.y
+  const distance = Math.sqrt(dx * dx + dy * dy)
+  const freeRadius = 24 + particle.depth * 18
+  if (distance <= freeRadius || distance < 1) {
+    return {
+      x: dx * 0.16,
+      y: dy * 0.16,
+    }
+  }
+
+  const excess = distance - freeRadius
+  const strength = 1 + excess / freeRadius
+  return {
+    x: dx * strength,
+    y: dy * strength,
+  }
+}
+
+function clampParticleSpeed(particle: Particle) {
+  const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy)
+  const limit = maxBrownianSpeed * particle.depth
+  if (speed <= limit || speed < 0.001) {
+    return
+  }
+  const scale = limit / speed
+  particle.vx *= scale
+  particle.vy *= scale
+}
+
 function particleGlow(particle: Particle) {
   const focus = buttonFocus || pointer
   if (!focus) {
@@ -208,6 +253,22 @@ function particleGlow(particle: Particle) {
     return 0
   }
   return (1 - distance / focus.radius) * 0.42
+}
+
+function paintParticleHalo(particle: Particle, glow: number) {
+  if (!ctx || glow < 0.16) {
+    return
+  }
+
+  const haloRadius = (particle.radius + glow * 2) * (7 + glow * 8)
+  const halo = ctx.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, haloRadius)
+  halo.addColorStop(0, `rgba(240, 207, 132, ${0.18 * glow})`)
+  halo.addColorStop(0.45, `rgba(215, 180, 106, ${0.07 * glow})`)
+  halo.addColorStop(1, 'rgba(215, 180, 106, 0)')
+  ctx.fillStyle = halo
+  ctx.beginPath()
+  ctx.arc(particle.x, particle.y, haloRadius, 0, Math.PI * 2)
+  ctx.fill()
 }
 
 function paintMagneticLines() {
