@@ -13,6 +13,7 @@ type Config struct {
 	JWT       JWTConfig
 	File      FileConfig
 	IM        IMConfig
+	Agent     AgentConfig
 	Snowflake SnowflakeConfig
 	WebSocket WebSocketConfig
 }
@@ -53,6 +54,15 @@ type IMConfig struct {
 	GroupMaxMembers      int
 	RecallMinutes        int
 	TextMessageMaxLength int
+}
+
+type AgentConfig struct {
+	Enabled           bool
+	APIBaseURL        string
+	APITimeoutSeconds int
+	DefaultUsername   string
+	DefaultNickname   string
+	DefaultAvatarURL  string
 }
 
 type SnowflakeConfig struct {
@@ -101,6 +111,14 @@ func Load() *Config {
 			GroupMaxMembers:      getEnvInt("IM_GROUP_MAX_MEMBERS", 50),
 			RecallMinutes:        getEnvInt("IM_RECALL_MINUTES", 5),
 			TextMessageMaxLength: getEnvInt("IM_TEXT_MESSAGE_MAX_LENGTH", 2000),
+		},
+		Agent: AgentConfig{
+			Enabled:           getEnvBool("AGENT_ENABLED", false),
+			APIBaseURL:        getEnv("AGENT_API_BASE_URL", "http://127.0.0.1:8100"),
+			APITimeoutSeconds: getEnvInt("AGENT_API_TIMEOUT_SECONDS", 30),
+			DefaultUsername:   getEnv("AGENT_DEFAULT_USERNAME", "default_agent"),
+			DefaultNickname:   getEnv("AGENT_DEFAULT_NICKNAME", "IM Agent"),
+			DefaultAvatarURL:  getEnv("AGENT_DEFAULT_AVATAR_URL", ""),
 		},
 		Snowflake: SnowflakeConfig{
 			NodeID: int64(getEnvInt("SNOWFLAKE_NODE_ID", 1)),

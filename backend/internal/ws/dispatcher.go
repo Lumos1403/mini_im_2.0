@@ -93,7 +93,7 @@ func (d *SyncMessageDispatcher) Dispatch(ctx context.Context, client *Client, en
 		return client.sendEnvelope(envelope.Seq, EventChatMessageFailed, result.Failed)
 	}
 
-	if result.Receive != nil && !result.Duplicated {
+	if result.Receive != nil && !result.Duplicated && result.AgentReply == nil {
 		receiverIDs := result.ReceiverIDs
 		if len(receiverIDs) == 0 && result.ReceiverID > 0 {
 			receiverIDs = []int64{result.ReceiverID}
@@ -111,7 +111,22 @@ func (d *SyncMessageDispatcher) Dispatch(ctx context.Context, client *Client, en
 			}
 		}
 	}
-	return client.sendEnvelope(envelope.Seq, EventChatMessageAck, result.Ack)
+	if result.Ack == nil {
+		return client.sendEnvelope(envelope.Seq, EventChatMessageFailed, service.SendMessageFailedOutput{
+			ClientMsgID:    data.ClientMsgID,
+			ConversationID: data.ConversationID,
+			SendStatus:     model.MessageSendStatusFailed,
+			Code:           "internal_error",
+			Message:        "message send failed",
+		})
+	}
+	if err := client.sendEnvelope(envelope.Seq, EventChatMessageAck, result.Ack); err != nil {
+		return err
+	}
+	if result.AgentReply != nil && !result.Duplicated {
+		d.messageService.HandleAgentReplyAsync(result.AgentReply)
+	}
+	return nil
 }
 
 func (d *SyncMessageDispatcher) sendReceive(ctx context.Context, receiverID int64, data *service.MessageReceiveOutput) error {

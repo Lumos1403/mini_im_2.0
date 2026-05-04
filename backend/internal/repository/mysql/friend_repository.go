@@ -78,6 +78,20 @@ LIMIT 1
 	return status == model.FriendshipStatusNormal, nil
 }
 
+func (r *FriendRepository) EnsureFriendshipInTx(ctx context.Context, exec Executor, userID1 int64, userID2 int64) error {
+	left, right := orderedFriendPair(userID1, userID2)
+	if left <= 0 || right <= 0 || left == right {
+		return ErrFriendshipNotFound
+	}
+
+	_, err := exec.ExecContext(ctx, `
+INSERT INTO friendships (user_id_1, user_id_2, status)
+VALUES (?, ?, ?)
+ON DUPLICATE KEY UPDATE status = VALUES(status), updated_at = CURRENT_TIMESTAMP
+`, left, right, model.FriendshipStatusNormal)
+	return err
+}
+
 func (r *FriendRepository) ListFriendRequests(ctx context.Context, userID int64, received bool, limit int, offset int) ([]model.FriendRequestWithUser, int64, error) {
 	where := "fr.to_user_id = ?"
 	peerID := "fr.from_user_id"

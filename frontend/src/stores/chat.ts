@@ -21,6 +21,10 @@ export type ChatMessage = Message & {
   is_recall_notice?: boolean
   recalled_message_id?: string
   editable_until?: string
+  is_agent_streaming?: boolean
+  agent_stream_id?: string
+  stream_status?: 'streaming' | 'completed' | 'error'
+  agent_chunk_index?: number
 }
 
 export interface OutgoingChatMessage {
@@ -29,6 +33,40 @@ export interface OutgoingChatMessage {
   message_type: MessageType
   content: string
   extra_json?: Record<string, unknown>
+}
+
+export interface AgentMessageStartData {
+  stream_id: string
+  conversation_id: string
+  client_msg_id: string
+  sender_id: string
+  message_type: MessageType
+  created_at: string
+}
+
+export interface AgentMessageChunkData {
+  stream_id: string
+  conversation_id: string
+  client_msg_id: string
+  content: string
+  chunk_index: number
+  mode: 'replace'
+  mermaid_pending: boolean
+}
+
+export interface AgentMessageDoneData {
+  stream_id: string
+  conversation_id: string
+  client_msg_id: string
+  message: Message
+}
+
+export interface AgentMessageErrorData {
+  stream_id: string
+  conversation_id: string
+  client_msg_id: string
+  code: string
+  message: string
 }
 
 interface StoredRecallNotice {
@@ -382,7 +420,7 @@ export const useChatStore = defineStore('chat', {
         this.rememberMessage(updatedMessage)
         this.upsertConversationFromMessage(updatedMessage, { clearUnread: true, moveToTop: true })
       } else {
-        this.rememberRawMessageKeys(data.message_id, data.client_msg_id)
+        this.rememberRawMessageKeys(data.conversation_id, data.message_id, data.client_msg_id)
       }
     },
 
@@ -405,7 +443,7 @@ export const useChatStore = defineStore('chat', {
       if (updatedMessage) {
         this.rememberMessage(updatedMessage)
       } else {
-        this.rememberRawMessageKeys(data.message_id || '', data.client_msg_id)
+        this.rememberRawMessageKeys(data.conversation_id, data.message_id || '', data.client_msg_id)
       }
     },
 
@@ -424,7 +462,7 @@ export const useChatStore = defineStore('chat', {
         moveToTop: true,
       })
 
-      if (isActiveConversation && !this.hasMessage(message)) {
+      if (isActiveConversation) {
         this.messages = sortChatMessages(appendOrMergeMessage(this.messages, message))
         this.requestScrollToBottom()
       }
@@ -432,6 +470,117 @@ export const useChatStore = defineStore('chat', {
       this.rememberMessage(message)
       if (!this.conversationHasServerProfile(message.conversation_id)) {
         await this.refreshConversationItem(message.conversation_id)
+      }
+    },
+
+    startAgentMessageStream(data: AgentMessageStartData) {
+      if (!data.conversation_id || !data.client_msg_id || !data.stream_id) {
+        return
+      }
+
+      const localMessage: ChatMessage = {
+        client_msg_id: data.client_msg_id,
+        message_id: data.client_msg_id,
+        conversation_id: data.conversation_id,
+        sender_id: data.sender_id,
+        message_type: data.message_type || 'text',
+        content: '',
+        extra_json: {},
+        send_status: 'sending',
+        created_at: data.created_at || new Date().toISOString(),
+        is_agent_streaming: true,
+        agent_stream_id: data.stream_id,
+        stream_status: 'streaming',
+        agent_chunk_index: 0,
+      }
+
+      this.ensureConversationFromMessage(localMessage)
+      if (data.conversation_id === this.activeConversationID) {
+        this.messages = sortChatMessages(appendOrMergeMessage(this.messages, localMessage))
+        this.requestScrollToBottom()
+      }
+    },
+
+    applyAgentMessageChunk(data: AgentMessageChunkData) {
+      if (!data.stream_id || !data.client_msg_id) {
+        return
+      }
+
+      let updated = false
+      this.messages = this.messages.map((message) => {
+        if (!isAgentStreamMatch(message, data.stream_id, data.client_msg_id)) {
+          return message
+        }
+        if (message.stream_status === 'completed' || message.stream_status === 'error') {
+          return message
+        }
+        if ((message.agent_chunk_index || 0) >= data.chunk_index) {
+          return message
+        }
+        updated = true
+        return {
+          ...message,
+          content: data.mode === 'replace' ? data.content : message.content,
+          agent_chunk_index: data.chunk_index,
+          is_agent_streaming: true,
+          stream_status: 'streaming',
+        }
+      })
+
+      if (updated && data.conversation_id === this.activeConversationID) {
+        this.requestScrollToBottom()
+      }
+    },
+
+    async applyAgentMessageDone(data: AgentMessageDoneData) {
+      const finalMessage = normalizeIncomingMessage(data.message)
+      if (!finalMessage.message_id || !finalMessage.conversation_id) {
+        return
+      }
+
+      const alreadySeen = this.hasSeenMessage(finalMessage)
+      const isActiveConversation = finalMessage.conversation_id === this.activeConversationID
+      this.ensureConversationFromMessage(finalMessage)
+      this.upsertConversationFromMessage(finalMessage, {
+        clearUnread: isActiveConversation,
+        unreadDelta: isActiveConversation || alreadySeen ? 0 : 1,
+        moveToTop: true,
+      })
+
+      if (isActiveConversation) {
+        this.messages = sortChatMessages(replaceAgentStreamMessage(this.messages, data.stream_id, data.client_msg_id, finalMessage))
+        this.requestScrollToBottom()
+      }
+
+      this.rememberMessage(finalMessage)
+      if (!this.conversationHasServerProfile(finalMessage.conversation_id)) {
+        await this.refreshConversationItem(finalMessage.conversation_id)
+      }
+    },
+
+    applyAgentMessageError(data: AgentMessageErrorData) {
+      if (!data.stream_id || !data.client_msg_id) {
+        return
+      }
+
+      let updated = false
+      this.messages = this.messages.map((message) => {
+        if (!isAgentStreamMatch(message, data.stream_id, data.client_msg_id)) {
+          return message
+        }
+        updated = true
+        return {
+          ...message,
+          content: message.content || data.message,
+          send_status: 'failed',
+          error_message: data.message,
+          is_agent_streaming: false,
+          stream_status: 'error',
+        }
+      })
+
+      if (updated && data.conversation_id === this.activeConversationID) {
+        this.requestScrollToBottom()
       }
     },
 
@@ -630,16 +779,16 @@ export const useChatStore = defineStore('chat', {
     },
 
     rememberMessage(message: ChatMessage) {
-      this.rememberRawMessageKeys(message.message_id, message.client_msg_id)
+      this.rememberRawMessageKeys(message.conversation_id, message.message_id, message.client_msg_id)
     },
 
     rememberMessages(messages: ChatMessage[]) {
       messages.forEach((message) => this.rememberMessage(message))
     },
 
-    rememberRawMessageKeys(messageID: string, clientMsgID: string) {
+    rememberRawMessageKeys(conversationID: string, messageID: string, clientMsgID: string) {
       const nextKeys = [...this.seenMessageKeys]
-      for (const key of rawMessageKeys(messageID, clientMsgID)) {
+      for (const key of rawMessageKeys(conversationID, messageID, clientMsgID)) {
         if (!nextKeys.includes(key)) {
           nextKeys.push(key)
         }
@@ -957,11 +1106,41 @@ function appendOrMergeMessage(messages: ChatMessage[], incoming: ChatMessage) {
   }
 
   const next = [...messages]
-  next[index] = {
+  const merged: ChatMessage = {
     ...next[index],
     ...incoming,
   }
+  if (isPersistedMessage(incoming)) {
+    delete merged.is_agent_streaming
+    delete merged.agent_stream_id
+    delete merged.stream_status
+    delete merged.agent_chunk_index
+  }
+  next[index] = merged
   return next
+}
+
+function replaceAgentStreamMessage(
+  messages: ChatMessage[],
+  streamID: string,
+  clientMsgID: string,
+  finalMessage: ChatMessage,
+) {
+  const index = messages.findIndex((message) => isAgentStreamMatch(message, streamID, clientMsgID))
+  if (index === -1) {
+    return appendOrMergeMessage(messages, finalMessage)
+  }
+
+  const next = [...messages]
+  next[index] = finalMessage
+  return dedupeMessages(next)
+}
+
+function isAgentStreamMatch(message: ChatMessage, streamID: string, clientMsgID: string) {
+  return Boolean(
+    (streamID && message.agent_stream_id === streamID) ||
+      (clientMsgID && message.client_msg_id === clientMsgID),
+  )
 }
 
 function dedupeMessages(messages: ChatMessage[]) {
@@ -969,25 +1148,28 @@ function dedupeMessages(messages: ChatMessage[]) {
 }
 
 function isSameMessage(left: ChatMessage, right: ChatMessage) {
+  if (left.conversation_id && right.conversation_id && left.conversation_id !== right.conversation_id) {
+    return false
+  }
   if (left.message_id && right.message_id && left.message_id === right.message_id) {
     return true
   }
   return Boolean(left.client_msg_id && right.client_msg_id && left.client_msg_id === right.client_msg_id)
 }
 
-function rawMessageKeys(messageID: string, clientMsgID: string) {
+function rawMessageKeys(conversationID: string, messageID: string, clientMsgID: string) {
   const keys: string[] = []
-  if (messageID) {
-    keys.push(`message:${messageID}`)
+  if (conversationID && messageID) {
+    keys.push(`message:${conversationID}:${messageID}`)
   }
-  if (clientMsgID) {
-    keys.push(`client:${clientMsgID}`)
+  if (conversationID && clientMsgID) {
+    keys.push(`client:${conversationID}:${clientMsgID}`)
   }
   return keys
 }
 
 function messageKeys(message: ChatMessage) {
-  return rawMessageKeys(message.message_id, message.client_msg_id)
+  return rawMessageKeys(message.conversation_id, message.message_id, message.client_msg_id)
 }
 
 function sortChatMessages(items: ChatMessage[]) {

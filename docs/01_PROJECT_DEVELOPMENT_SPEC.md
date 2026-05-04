@@ -39,7 +39,7 @@ UI 组件库：Element Plus 或 Naive UI，二选一即可
 ### 存储
 
 ```txt
-MySQL：用户、好友、会话、消息、群聊、文件元信息
+MySQL：用户、好友、会话、消息、群聊、文件元信息 
 Redis：Token、在线状态、WebSocket 节点信息、撤回重新编辑缓存、限流计数
 本地磁盘：MVP 文件存储
 后续扩展：MinIO / 阿里云 OSS / 腾讯云 COS / AWS S3
@@ -154,20 +154,17 @@ im:message:recall_edit:{message_id}:{user_id}
 当前版本：
 
 ```txt
-只实现 Agent 作为特殊用户和聊天对象
-不强制接入真实 AI 服务
+默认 Agent 用户使用 users.user_type = agent
+注册后自动创建默认 Agent 好友和 private conversation
+用户向默认 Agent private conversation 发送 text 消息后，Go 后端异步调用 FastAPI Agent 服务并写入回复
+Agent 服务不可用时，用户原消息不回滚，后端写入一条 Agent 失败提示消息
 ```
 
 后续扩展：
 
 ```txt
-用户向 Agent 发消息
-后端识别接收方是 Agent
-消息入库
-后端调用 Agent 服务
-Agent 生成回复
-回复写入 messages
-通过 WebSocket 推送给用户
+接入 /api/chat/stream SSE 流式打字机
+支持多 Agent 管理
 ```
 
 ## 7. 好友规则

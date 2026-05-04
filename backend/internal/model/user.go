@@ -7,6 +7,8 @@ import (
 
 const (
 	UserTypeNormal = "normal"
+	UserTypeAgent  = "agent"
+	UserTypeSystem = "system"
 
 	UserStatusNormal   = "normal"
 	UserStatusDisabled = "disabled"

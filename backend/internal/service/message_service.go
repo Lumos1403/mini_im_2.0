@@ -11,9 +11,12 @@ import (
 
 	"mini_im/backend/internal/model"
 	apperrors "mini_im/backend/internal/pkg/errors"
+	"mini_im/backend/internal/pkg/logger"
 	"mini_im/backend/internal/pkg/snowflake"
 	mysqlrepo "mini_im/backend/internal/repository/mysql"
 	redisrepo "mini_im/backend/internal/repository/redis"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -54,6 +57,7 @@ type SendMessageResult struct {
 	ReceiverID  int64
 	ReceiverIDs []int64
 	Duplicated  bool
+	AgentReply  *AgentReplyTask
 }
 
 type MessageService struct {
@@ -67,6 +71,7 @@ type MessageService struct {
 	textMessageMaxLength int
 	recallWindow         time.Duration
 	recallNotifier       MessageRecallNotifier
+	agentService         *AgentService
 }
 
 type MessageRecallNotifier interface {
@@ -105,6 +110,17 @@ func NewMessageService(
 
 func (s *MessageService) SetRecallNotifier(notifier MessageRecallNotifier) {
 	s.recallNotifier = notifier
+}
+
+func (s *MessageService) SetAgentService(agentService *AgentService) {
+	s.agentService = agentService
+}
+
+func (s *MessageService) HandleAgentReplyAsync(task *AgentReplyTask) {
+	if s == nil || s.agentService == nil || task == nil {
+		return
+	}
+	s.agentService.HandleUserMessageAsync(*task)
 }
 
 func (s *MessageService) SendMessage(ctx context.Context, input SendMessageInput) (*SendMessageResult, *apperrors.AppError) {
@@ -189,11 +205,15 @@ func (s *MessageService) sendPrivateMessage(ctx context.Context, input SendMessa
 		return nil, apperrors.ErrInternal
 	}
 
-	return &SendMessageResult{
+	result := &SendMessageResult{
 		Ack:        toAckOutput(message),
 		Receive:    toReceiveOutput(message),
 		ReceiverID: receiverID,
-	}, nil
+	}
+	if task := s.buildAgentReplyTask(ctx, input, payload, receiverID); task != nil {
+		result.AgentReply = task
+	}
+	return result, nil
 }
 
 func (s *MessageService) sendGroupMessage(ctx context.Context, input SendMessageInput, payload normalizedMessagePayload) (*SendMessageResult, *apperrors.AppError) {
@@ -605,6 +625,45 @@ func (s *MessageService) createBlockedMessage(ctx context.Context, senderID int6
 
 	return &SendMessageResult{
 		Failed: failedMessageFromMessage(message, wsFailureBlocked, "对方已拒收你的消息"),
+	}
+}
+
+func (s *MessageService) buildAgentReplyTask(ctx context.Context, input SendMessageInput, payload normalizedMessagePayload, receiverID int64) *AgentReplyTask {
+	if s.agentService == nil || payload.MessageType != model.MessageTypeText || receiverID <= 0 || input.SenderID <= 0 {
+		return nil
+	}
+
+	receiverIsAgent, err := s.agentService.IsDefaultAgentUser(ctx, receiverID)
+	if err != nil {
+		logger.L().Warn("default agent receiver check failed",
+			zap.Int64("conversation_id", payload.ConversationID),
+			zap.Int64("receiver_id", receiverID),
+			zap.Error(err),
+		)
+		return nil
+	}
+	if !receiverIsAgent {
+		return nil
+	}
+
+	senderIsAgent, err := s.agentService.IsDefaultAgentUser(ctx, input.SenderID)
+	if err != nil {
+		logger.L().Warn("default agent sender check failed",
+			zap.Int64("conversation_id", payload.ConversationID),
+			zap.Int64("sender_id", input.SenderID),
+			zap.Error(err),
+		)
+		return nil
+	}
+	if senderIsAgent {
+		return nil
+	}
+
+	return &AgentReplyTask{
+		ConversationID: payload.ConversationID,
+		UserID:         input.SenderID,
+		AgentUserID:    receiverID,
+		Message:        payload.Content,
 	}
 }
 

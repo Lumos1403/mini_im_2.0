@@ -615,3 +615,19 @@ Token 失效则清空登录状态并跳转 /login
 文件下载未登录不可访问
 群禁言后发送按钮禁用或发送失败提示
 ```
+## Agent stream frontend addendum
+
+`ws store` dispatches `agent.message.start/chunk/done/error` only.
+
+`chat store` owns Agent streaming state:
+
+```txt
+is_agent_streaming
+agent_stream_id
+stream_status = streaming | completed | error
+agent_chunk_index
+```
+
+Agent chunks are replace snapshots, not append deltas. `agent.message.done` replaces the local streaming bubble with the formal message and records seen keys by `conversation_id + message_id/client_msg_id`.
+
+The message rendering layer owns visual feedback: loading dots for empty Agent content, a blinking cursor while streaming, Mermaid skeleton placeholders, and mermaid.ink image loading/error states.

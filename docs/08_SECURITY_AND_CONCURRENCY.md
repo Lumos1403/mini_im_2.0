@@ -181,6 +181,8 @@ client_msg_id 由客户端生成，用于同一 sender_id + conversation_id 下�
 failed_blocked 插入 messages、只插入发送方 message_user_states 必须在同一个 MySQL 事务中完成
 更新 last_message_id 时只能用更大的 message_id 覆盖，防止旧消息覆盖新消息
 failed_blocked 不推送、不补发、不转正、不更新 conversations.last_message_id
+默认 Agent private text 消息先完成用户消息入库和 ack，再用独立 timeout context 异步调用 Agent 服务
+Agent 回复或失败提示单独入库，不回滚用户原始消息，不触发二次 Agent 调用
 ```
 
 ### 3.2 后续异步链路

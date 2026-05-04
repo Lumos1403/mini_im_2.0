@@ -157,7 +157,7 @@ POST /api/auth/register
 
 注册成功后必须自动创建默认 Agent 好友和 Agent 单聊会话。
 
-当前 Step 2 只预留 Agent 好友创建的 service 方法，不创建好友关系和会话；好友系统与 Agent 聊天在后续阶段实现。
+当前 Agent MVP 已实现：注册成功后会创建默认 Agent 用户（如不存在）、好友关系、private conversation、conversation_members 和 conversation_user_states。该能力是本地 IM 数据能力，不依赖 FastAPI Agent 服务在线。
 
 ### 3.2 登录
 

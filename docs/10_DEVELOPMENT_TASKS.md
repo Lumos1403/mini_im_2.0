@@ -620,6 +620,21 @@ friend 状态本轮只显示“已是好友”
 当前操作者前端必须立即移除对应会话，并重新拉取会话列表兜底
 ```
 
+### Step 10.7：Agent 好友接入 MVP
+
+目标：接通 Go IM 后端与 FastAPI Agent 服务，完成默认 Agent 好友和私聊自动回复闭环。
+
+范围：
+
+```txt
+默认 Agent 用户使用 users.user_type = agent 幂等创建
+注册后自动创建默认 Agent 好友和 private conversation
+登录后对老用户做默认 Agent 好友补偿
+用户向默认 Agent private conversation 发送 text 后，ack 成功后异步调用 /api/chat
+Agent 回复或失败提示写入 messages 并通过 chat.message.receive 推送给用户
+不接入 SSE、不做多 Agent、不重构消息系统、不改 WebSocket 协议
+```
+
 ## 阶段 11：前端完整界面
 
 ### Task 11.1 登录注册页面

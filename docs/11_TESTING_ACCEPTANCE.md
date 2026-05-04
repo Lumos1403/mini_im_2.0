@@ -134,6 +134,18 @@ failed_blocked 刷新后仍保留在发送方历史中
 聊天记录分页正常
 ```
 
+### Agent 私聊 MVP
+
+```txt
+新注册用户的好友列表中存在默认 Agent
+新注册用户存在与默认 Agent 的 private conversation
+用户给默认 Agent 发送 text 后先收到 chat.message.ack
+Agent 服务正常时，用户稍后收到 Agent 的 chat.message.receive
+刷新后历史消息中同时存在用户消息和 Agent 回复
+Agent 服务不可用时，用户原消息 ack 正常，后端不崩溃，并能看到 Agent 失败提示消息
+普通好友聊天、群聊消息、文件消息不触发 Agent 回复
+```
+
 ## 8. 删除和清空验收
 
 ### 单条删除

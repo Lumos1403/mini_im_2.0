@@ -38,6 +38,19 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
+func (r *UserRepository) WithTx(ctx context.Context, fn func(context.Context, Executor) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := fn(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *UserRepository) CreateUserWithProfile(ctx context.Context, user *model.User, profile *model.UserProfile) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -45,7 +58,15 @@ func (r *UserRepository) CreateUserWithProfile(ctx context.Context, user *model.
 	}
 	defer tx.Rollback()
 
-	_, err = tx.ExecContext(ctx, `
+	if err := r.CreateUserWithProfileInTx(ctx, tx, user, profile); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *UserRepository) CreateUserWithProfileInTx(ctx context.Context, exec Executor, user *model.User, profile *model.UserProfile) error {
+	_, err := exec.ExecContext(ctx, `
 INSERT INTO users (user_id, username, password_hash, user_type, status)
 VALUES (?, ?, ?, ?, ?)
 `, user.UserID, user.Username, user.PasswordHash, user.UserType, user.Status)
@@ -53,7 +74,7 @@ VALUES (?, ?, ?, ?, ?)
 		return mapDuplicateError(err)
 	}
 
-	_, err = tx.ExecContext(ctx, `
+	_, err = exec.ExecContext(ctx, `
 INSERT INTO user_profiles (user_id, nickname, avatar_url, gender, bio, profile_status, profile_review_reason)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 `, profile.UserID, profile.Nickname, profile.AvatarURL, profile.Gender, profile.Bio, profile.ProfileStatus, profile.ProfileReviewReason)
@@ -61,7 +82,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 		return mapDuplicateError(err)
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*model.UserWithProfile, error) {

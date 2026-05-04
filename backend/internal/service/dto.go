@@ -169,6 +169,40 @@ type MessageReceiveOutput struct {
 	CreatedAt       string          `json:"created_at"`
 }
 
+type AgentMessageStartOutput struct {
+	StreamID       string `json:"stream_id"`
+	ConversationID string `json:"conversation_id"`
+	ClientMsgID    string `json:"client_msg_id"`
+	SenderID       string `json:"sender_id"`
+	MessageType    string `json:"message_type"`
+	CreatedAt      string `json:"created_at"`
+}
+
+type AgentMessageChunkOutput struct {
+	StreamID       string `json:"stream_id"`
+	ConversationID string `json:"conversation_id"`
+	ClientMsgID    string `json:"client_msg_id"`
+	Content        string `json:"content"`
+	ChunkIndex     int    `json:"chunk_index"`
+	Mode           string `json:"mode"`
+	MermaidPending bool   `json:"mermaid_pending"`
+}
+
+type AgentMessageDoneOutput struct {
+	StreamID       string               `json:"stream_id"`
+	ConversationID string               `json:"conversation_id"`
+	ClientMsgID    string               `json:"client_msg_id"`
+	Message        MessageReceiveOutput `json:"message"`
+}
+
+type AgentMessageErrorOutput struct {
+	StreamID       string `json:"stream_id"`
+	ConversationID string `json:"conversation_id"`
+	ClientMsgID    string `json:"client_msg_id"`
+	Code           string `json:"code"`
+	Message        string `json:"message"`
+}
+
 type MessageOutput struct {
 	ClientMsgID     string          `json:"client_msg_id"`
 	MessageID       string          `json:"message_id"`

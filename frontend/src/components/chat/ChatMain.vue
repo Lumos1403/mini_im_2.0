@@ -5,6 +5,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import type { Conversation } from '../../api/conversation'
 import GroupRoleBadge from '../group/GroupRoleBadge.vue'
 import { useChatStore, type ChatMessage } from '../../stores/chat'
+import StreamingMessageContent from './StreamingMessageContent.vue'
 
 const props = defineProps<{
   activeConversation?: Conversation
@@ -85,6 +86,10 @@ function groupSenderName(message: ChatMessage) {
   }
   return message.sender_id
 }
+
+function handleStreamingTyped() {
+  void scrollToBottom('auto')
+}
 </script>
 
 <template>
@@ -140,7 +145,7 @@ function groupSenderName(message: ChatMessage) {
 
       <article
         v-for="message in messages"
-        :key="message.message_id || message.client_msg_id"
+        :key="message.client_msg_id || message.message_id"
         :class="['message-row', { mine: chat.isMine(message), notice: message.is_recall_notice }]"
       >
         <div v-if="message.is_recall_notice" class="recall-notice">
@@ -179,9 +184,24 @@ function groupSenderName(message: ChatMessage) {
                 Download
               </button>
             </div>
-            <p v-else>{{ message.content }}</p>
+            <StreamingMessageContent
+              v-else
+              :content="message.content"
+              :streaming="message.stream_status === 'streaming'"
+              :error="message.stream_status === 'error'"
+              :error-message="message.error_message"
+              @typed="handleStreamingTyped"
+            />
 
-            <small>{{ message.send_status === 'sending' ? 'Sending...' : message.created_at }}</small>
+            <small>
+              {{
+                message.stream_status === 'streaming'
+                  ? 'Generating...'
+                  : message.send_status === 'sending'
+                    ? 'Sending...'
+                    : message.created_at
+              }}
+            </small>
             <div class="message-actions">
               <button v-if="chat.canDelete(message)" type="button" @click="chat.deleteVisibleMessage(message)">
                 Delete
@@ -317,6 +337,34 @@ function groupSenderName(message: ChatMessage) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.55;
+}
+
+.text-message {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.text-message-copy {
+  white-space: pre-wrap;
+}
+
+.markdown-image-link {
+  display: block;
+  margin: 10px 0 2px;
+}
+
+.markdown-image {
+  display: block;
+  width: min(480px, 100%);
+  max-height: 360px;
+  border: 1px solid rgba(240, 207, 132, 0.14);
+  border-radius: 10px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.message-row.mine .markdown-image {
+  border-color: rgba(23, 16, 9, 0.18);
 }
 
 .sender-line {

@@ -18,6 +18,14 @@ $env:REDIS_ADDR="127.0.0.1:6379"
 $env:JWT_ACCESS_SECRET="local-access-secret"
 $env:JWT_REFRESH_SECRET="local-refresh-secret"
 
+$env:AGENT_ENABLED="true"
+$env:AGENT_API_BASE_URL="http://127.0.0.1:8100"
+$env:AGENT_API_TIMEOUT_SECONDS="90"
+
+cd D:\Study\Go_Project\mini_im_2.0-codex\backend
+go run ./cmd/server
+
+
 go run ./cmd/server
 
 **前端窗口**//不同窗口该端口即可

@@ -10,10 +10,13 @@ import (
 	"mini_im/backend/internal/model"
 	apperrors "mini_im/backend/internal/pkg/errors"
 	jwtpkg "mini_im/backend/internal/pkg/jwt"
+	"mini_im/backend/internal/pkg/logger"
 	"mini_im/backend/internal/pkg/password"
 	"mini_im/backend/internal/pkg/snowflake"
 	mysqlrepo "mini_im/backend/internal/repository/mysql"
 	redisrepo "mini_im/backend/internal/repository/redis"
+
+	"go.uber.org/zap"
 )
 
 type AuthService struct {
@@ -66,14 +69,24 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*Regis
 		ProfileStatus: model.UserStatusNormal,
 	}
 
-	if err := s.userRepo.CreateUserWithProfile(ctx, user, profile); err != nil {
-		if errors.Is(err, mysqlrepo.ErrDuplicateUser) {
-			return nil, apperrors.ErrUsernameExists
-		}
+	if s.agentService == nil {
+		return nil, apperrors.ErrInternal
+	}
+	agent, err := s.agentService.EnsureDefaultAgentUser(ctx)
+	if err != nil {
 		return nil, apperrors.ErrInternal
 	}
 
-	if err := s.agentService.EnsureDefaultAgentFriend(ctx, userID); err != nil {
+	conversationID := s.idGenerator.NextID()
+	if err := s.userRepo.WithTx(ctx, func(ctx context.Context, exec mysqlrepo.Executor) error {
+		if err := s.userRepo.CreateUserWithProfileInTx(ctx, exec, user, profile); err != nil {
+			return err
+		}
+		return s.agentService.EnsureDefaultAgentFriendInTx(ctx, exec, userID, agent.User.UserID, conversationID)
+	}); err != nil {
+		if errors.Is(err, mysqlrepo.ErrDuplicateUser) {
+			return nil, apperrors.ErrUsernameExists
+		}
 		return nil, apperrors.ErrInternal
 	}
 
@@ -100,6 +113,9 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthOutput,
 	if user.User.Status != model.UserStatusNormal {
 		return nil, apperrors.ErrUserDisabled
 	}
+	if user.User.UserType != model.UserTypeNormal {
+		return nil, apperrors.ErrInvalidCredentials
+	}
 	if !password.Compare(user.User.PasswordHash, input.Password) {
 		return nil, apperrors.ErrInvalidCredentials
 	}
@@ -115,6 +131,7 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput) (*AuthOutput,
 	if err := s.tokenRepo.SaveRefreshToken(ctx, user.User.UserID, deviceID, pair.RefreshToken.Claims.JTI, s.tokenManager.RefreshTTL()); err != nil {
 		return nil, apperrors.ErrInternal
 	}
+	s.ensureDefaultAgentFriendAfterLogin(user.User.UserID)
 
 	return &AuthOutput{
 		AccessToken:  pair.AccessToken.Value,
@@ -182,6 +199,26 @@ func validUsername(username string) bool {
 func validPassword(raw string) bool {
 	length := len(raw)
 	return length >= 6 && length <= 72
+}
+
+func (s *AuthService) ensureDefaultAgentFriendAfterLogin(userID int64) {
+	if s == nil || s.agentService == nil || userID <= 0 {
+		return
+	}
+
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				logger.L().Error("default agent friend compensation panic", zap.Any("panic", recovered))
+			}
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.agentService.EnsureDefaultAgentFriend(ctx, userID); err != nil {
+			logger.L().Warn("default agent friend compensation failed", zap.Int64("user_id", userID), zap.Error(err))
+		}
+	}()
 }
 
 func toUserOutput(user *model.UserWithProfile) UserOutput {

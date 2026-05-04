@@ -2,7 +2,14 @@ import { defineStore } from 'pinia'
 
 import type { Message } from '../api/conversation'
 import { useAuthStore } from './auth'
-import { useChatStore, type OutgoingChatMessage } from './chat'
+import {
+  useChatStore,
+  type AgentMessageChunkData,
+  type AgentMessageDoneData,
+  type AgentMessageErrorData,
+  type AgentMessageStartData,
+  type OutgoingChatMessage,
+} from './chat'
 
 interface Envelope<T = unknown> {
   seq: string
@@ -124,6 +131,22 @@ export const useWsStore = defineStore('ws', {
       }
       if (envelope.type === 'chat.message.recalled') {
         chat.applyRecalled(envelope.data as RecalledData)
+        return
+      }
+      if (envelope.type === 'agent.message.start') {
+        chat.startAgentMessageStream(envelope.data as AgentMessageStartData)
+        return
+      }
+      if (envelope.type === 'agent.message.chunk') {
+        chat.applyAgentMessageChunk(envelope.data as AgentMessageChunkData)
+        return
+      }
+      if (envelope.type === 'agent.message.done') {
+        void chat.applyAgentMessageDone(envelope.data as AgentMessageDoneData)
+        return
+      }
+      if (envelope.type === 'agent.message.error') {
+        chat.applyAgentMessageError(envelope.data as AgentMessageErrorData)
       }
     },
   },

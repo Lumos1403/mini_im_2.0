@@ -15,6 +15,11 @@ const (
 	EventChatMessageReceive  = "chat.message.receive"
 	EventChatMessageFailed   = "chat.message.failed"
 	EventChatMessageRecalled = "chat.message.recalled"
+
+	EventAgentMessageStart = "agent.message.start"
+	EventAgentMessageChunk = "agent.message.chunk"
+	EventAgentMessageDone  = "agent.message.done"
+	EventAgentMessageError = "agent.message.error"
 )
 
 type Envelope struct {

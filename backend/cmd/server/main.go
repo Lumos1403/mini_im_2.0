@@ -8,6 +8,7 @@ import (
 	"mini_im/backend/internal/api/router"
 	"mini_im/backend/internal/config"
 	"mini_im/backend/internal/middleware"
+	"mini_im/backend/internal/pkg/agentclient"
 	jwtpkg "mini_im/backend/internal/pkg/jwt"
 	"mini_im/backend/internal/pkg/logger"
 	"mini_im/backend/internal/pkg/snowflake"
@@ -68,7 +69,26 @@ func main() {
 	if err != nil {
 		logger.L().Fatal("file storage init failed", zap.Error(err))
 	}
-	agentService := service.NewAgentService()
+	agentTimeout := time.Duration(cfg.Agent.APITimeoutSeconds) * time.Second
+	agentClient := agentclient.New(cfg.Agent.APIBaseURL, agentTimeout)
+	agentService := service.NewAgentService(userRepo, friendRepo, conversationRepo, messageRepo, idGenerator, service.AgentOptions{
+		Enabled:          cfg.Agent.Enabled,
+		APIBaseURL:       cfg.Agent.APIBaseURL,
+		APITimeout:       agentTimeout,
+		DefaultUsername:  cfg.Agent.DefaultUsername,
+		DefaultNickname:  cfg.Agent.DefaultNickname,
+		DefaultAvatarURL: cfg.Agent.DefaultAvatarURL,
+	}, agentClient)
+	agentEnsureCtx, agentEnsureCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defaultAgent, err := agentService.EnsureDefaultAgentUser(agentEnsureCtx)
+	agentEnsureCancel()
+	if err != nil {
+		logger.L().Fatal("default agent user ensure failed", zap.Error(err))
+	}
+	logger.L().Info("default agent user ensured",
+		zap.Int64("agent_user_id", defaultAgent.User.UserID),
+		zap.Bool("agent_enabled", cfg.Agent.Enabled),
+	)
 	authService := service.NewAuthService(userRepo, tokenRepo, tokenManager, idGenerator, agentService)
 	userService := service.NewUserService(userRepo)
 	conversationService := service.NewConversationService(conversationRepo)
@@ -76,6 +96,7 @@ func main() {
 	groupService := service.NewGroupService(groupRepo, idGenerator, cfg.IM.GroupMaxMembers)
 	fileService := service.NewFileService(fileRepo, fileStorage, idGenerator, cfg.File.MaxSizeMB)
 	messageService := service.NewMessageService(conversationRepo, friendRepo, messageRepo, fileRepo, groupRepo, messageCacheRepo, idGenerator, cfg.IM.TextMessageMaxLength, cfg.IM.RecallMinutes)
+	messageService.SetAgentService(agentService)
 	searchRepo := mysqlrepo.NewSearchRepository(db)
 	searchService := service.NewSearchService(searchRepo, userRepo)
 	onlineService := service.NewOnlineService(onlineRepo, cfg.WebSocket.ServerID, time.Duration(cfg.WebSocket.OnlineTTLSeconds)*time.Second)
@@ -83,6 +104,7 @@ func main() {
 	wsHub := ws.NewHub(onlineService)
 	go wsHub.Run(context.Background())
 	messageService.SetRecallNotifier(ws.NewRecallNotifier(wsHub, time.Duration(cfg.WebSocket.WriteWaitSeconds)*time.Second))
+	agentService.SetMessageNotifier(ws.NewAgentNotifier(wsHub, time.Duration(cfg.WebSocket.WriteWaitSeconds)*time.Second))
 	messageDispatcher := ws.NewSyncMessageDispatcher(messageService, wsHub, time.Duration(cfg.WebSocket.WriteWaitSeconds)*time.Second)
 	wsServer := ws.NewServer(wsHub, tokenManager, tokenRepo, messageDispatcher, ws.OptionsFromConfig(cfg.WebSocket))
 

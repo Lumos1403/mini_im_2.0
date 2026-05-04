@@ -536,6 +536,8 @@ system.notice
 正常消息更新会话 last_message 并推送给在线接收方
 failed_blocked 只为发送方持久化，不更新 last_message，不推送给接收方
 给发送方返回 ack 或 failed
+如果接收方是默认 Agent 且消息类型为 text，发送方 ack 成功后由后端异步调用 Agent 服务
+Agent 回复或失败提示作为新的 text 消息入库，并通过 chat.message.receive 推送给用户
 ```
 
 被拉黑导致的 `failed_blocked` 写入 messages，只创建发送方 message_user_states，不创建接收方 message_user_states。发送方刷新后可通过历史消息接口看到，接收方永远不可见；解除拉黑后不补发、不转正。
@@ -550,3 +552,31 @@ Redis Pub/Sub 或 Redis Stream 转发跨节点消息
 Nginx 负责负载均衡
 WebSocket 可使用 sticky session 或集中式路由
 ```
+## Agent stream events addendum
+
+Agent replies can use step-level streaming snapshots. This is not token-level streaming.
+
+New events:
+
+```txt
+agent.message.start
+agent.message.chunk
+agent.message.done
+agent.message.error
+```
+
+`agent.message.chunk` uses replace snapshot semantics:
+
+```json
+{
+  "stream_id": "agent-stream-1",
+  "conversation_id": "111111",
+  "client_msg_id": "agent-222222",
+  "content": "current display snapshot",
+  "chunk_index": 1,
+  "mode": "replace",
+  "mermaid_pending": false
+}
+```
+
+`agent.message.done` carries the formal message. For compatibility, the backend then pushes `chat.message.receive` with the same `message_id` and `client_msg_id`; new frontends must dedupe it.

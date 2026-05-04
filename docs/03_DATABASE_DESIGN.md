@@ -36,6 +36,8 @@ agent：系统 Agent
 system：系统用户
 ```
 
+当前 Agent MVP：默认 Agent 用户复用 `users.user_type = agent`，通过唯一 `username` 幂等创建，并复用 `friendships`、`conversations`、`conversation_members`、`conversation_user_states`、`messages`、`message_user_states` 完成默认好友、私聊会话和 Agent 回复持久化；不新增表或字段。
+
 ### 用户状态 user_status
 
 ```txt

@@ -219,6 +219,18 @@ bcrypt 密码校验
 
 搜索逻辑必须封装，后续可替换 Elasticsearch。
 
+### 3.9 agent 模块
+
+实现：
+
+```txt
+默认 Agent 用户 ensure
+注册和登录补偿时默认 Agent 好友 / private conversation ensure
+封装 FastAPI Agent 同步 /api/chat 调用
+Agent 回复和失败提示落库后通过 WebSocket 推送
+后续可替换为 /api/chat/stream SSE
+```
+
 ## 4. 配置设计
 
 配置示例：
@@ -250,6 +262,14 @@ file:
 im:
   group_max_members: 50
   recall_minutes: 5
+
+agent:
+  enabled: true
+  api_base_url: "http://127.0.0.1:8100"
+  api_timeout_seconds: 30
+  default_username: "default_agent"
+  default_nickname: "IM Agent"
+  default_avatar_url: ""
 ```
 
 生产环境必须通过环境变量覆盖敏感配置。
@@ -355,3 +375,17 @@ WebSocket 连接和断开
 ```
 
 日志不能记录明文密码、完整 Token。
+## Agent stream architecture addendum
+
+Agent stream replies are handled in the existing layered flow:
+
+```txt
+ws dispatcher -> message service -> agent service -> agentclient
+agent service -> agent notifier -> websocket hub
+```
+
+`agentclient` owns the tolerant SSE reader for `/api/chat/stream`. The stream payload is plain text `data:` content, not JSON and not token deltas.
+
+`AgentService` owns business flow: create `stream_id`, push start/chunk/error/done events, filter prompt echoes and empty chunks, persist one final Agent text message, then push a compatibility `chat.message.receive`.
+
+`ws.AgentNotifier` only marshals WebSocket envelopes and sends them through `Hub`; it does not own Agent filtering or database logic.
